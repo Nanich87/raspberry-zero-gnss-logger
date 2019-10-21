@@ -16,3 +16,10 @@ pi/f9p_navi.conf
 
 *outstr1-path = put tcp client here*
 
+**3. rc.local**
+
+>sudo nano /etc/rc.local
+
+**4. crontab**
+
+>crontab -e
