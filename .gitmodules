@@ -1,0 +1,3 @@
+[submodule "pi/RTKLIB"]
+	path = pi/RTKLIB
+	url = https://github.com/rtklibexplorer/RTKLIB.git
