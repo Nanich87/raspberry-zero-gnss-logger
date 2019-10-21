@@ -27,11 +27,19 @@ pi/f9p_navi.conf
 **5. Compile RTKLIB**
 
 >sudo apt-get install build-essential
+
 >sudo apt-get install automake
+
 >sudo apt-get install checkinstall
+
 >sudo apt-get install liblapack3
+
 >sudo apt-get install libblas3
+
 >cd RTKLIB
+
 >cd app
+
 >sudo make
+
 >sudo make install
