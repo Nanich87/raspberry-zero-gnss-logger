@@ -22,6 +22,10 @@ pi/f9p_navi.conf
 
 **4. Compile RTKLIB**
 
+>git clone https://github.com/rtklibexplorer/RTKLIB.git
+
+*Before compiling rtkrcv copy rtkrcv.c from this repository to /home/pi/RTKLIB/app/rtkrcv/*
+
 >sudo apt-get install build-essential
 
 >sudo apt-get install automake
@@ -32,13 +36,11 @@ pi/f9p_navi.conf
 
 >sudo apt-get install libblas3
 
->cd RTKLIB
-
->cd app
+>cd RTKLIB/app/rtkrcv/gcc
 
 >sudo make
 
->sudo make 
+>sudo make install
 
 **5. Connect GPS**
 
