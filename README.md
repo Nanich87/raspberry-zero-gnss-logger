@@ -4,7 +4,7 @@
 
 **1. Dropbox Token**
 
-pi/poweroff.py
+pi/rtk/rtkserver.py
 
 >TOKEN = 'put dropbox token here'
 
@@ -44,19 +44,21 @@ pi/f9p_navi.conf
 
 *See RPi_GPIO.png for pin numbers*
 
->GPS VCC -> PIN04
+*See ublox-zed-f9p.jpg GPS pins*
+
+>GPS +5V -> PIN04
 
 >GPS GND -> PIN06
 
->GPS RX  -> PIN08 (GPIO14)
+>GPS RXD -> PIN08 (GPIO14)
 
->GPS TX  -> PIN10 (GPIO15)
+>GPS TXD -> PIN10 (GPIO15)
 
 **6. Connect LED**
 
->LED GND  -> PIN09
+>LED- -> PIN09
 
->LED VCC  -> PIN11 (GPIO17) - use 500 ohm resistor
+>LED+ -> PIN11 (GPIO17) - use 500 ohm resistor
 
 **7. Connect Camera Button**
 
