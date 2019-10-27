@@ -68,4 +68,4 @@ PIN33 & PIN34 (This is for test purposes only. DO NOT connect GPS EXTINT here!!!
 
 **8. Connect Shutdown Button**
 
-PIN33 & PIN34 (this stops rtkrcv and uploads data to Dropbox, and shuts down Pi)
+PIN39 & PIN40 (this stops rtkrcv and uploads data to Dropbox, and shuts down Pi)
