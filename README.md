@@ -4,6 +4,12 @@
 
 **1. Dropbox Token**
 
+*Installation:*
+
+>pip install dropbox
+
+*Token*
+
 pi/rtk/rtkserver.py
 
 >TOKEN = 'put dropbox token here'
