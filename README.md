@@ -69,3 +69,22 @@ PIN33 & PIN34 (This is for test purposes only. DO NOT connect GPS EXTINT here!!!
 **8. Connect Shutdown Button**
 
 PIN39 & PIN40 (this stops rtkrcv and uploads data to Dropbox, and shuts down Pi)
+
+**9 USB MODEM**
+
+*If you run a modeswitch command on the modem, it will activate itself as a modem instead of mass storage, and your system will automatically detect it as such.*
+
+*Reading your lsusb output, we have this:*
+
+>lsusb
+
+>Bus 002 Device 003: ID 12d1:1f01 Huawei Technologies Co., Ltd. E353/E3131 (Mass storage mode)
+
+*So, let's make the mode auto-set to modem mode. In a terminal, run the following command:*
+
+>sudo nano /lib/udev/rules.d/40-usb_modeswitch.rules
+
+*At the very bottom of the opened file, paste in this exact string:*
+
+># Huawei E353/E3131
+>ATTR{idVendor}=="12d1", ATTR{idProduct}=="1f01", RUN +="usb_modeswitch '%b/%k'" 
