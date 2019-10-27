@@ -20,11 +20,7 @@ pi/f9p_navi.conf
 
 >sudo nano /etc/rc.local
 
-**4. crontab**
-
->crontab -e
-
-**5. Compile RTKLIB**
+**4. Compile RTKLIB**
 
 >sudo apt-get install build-essential
 
