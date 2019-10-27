@@ -86,5 +86,5 @@ PIN39 & PIN40 (this stops rtkrcv and uploads data to Dropbox, and shuts down Pi)
 
 *At the very bottom of the opened file, paste in this exact string:*
 
-># Huawei E353/E3131
+> # Huawei E353/E3131
 >ATTR{idVendor}=="12d1", ATTR{idProduct}=="1f01", RUN +="usb_modeswitch '%b/%k'" 
