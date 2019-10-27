@@ -38,4 +38,30 @@ pi/f9p_navi.conf
 
 >sudo make
 
->sudo make install
+>sudo make 
+
+**5. Connect GPS**
+
+*See RPi_GPIO.png for pin numbers*
+
+>GPS VCC -> PIN04
+
+>GPS GND -> PIN06
+
+>GPS RX  -> PIN08 (GPIO14)
+
+>GPS TX  -> PIN10 (GPIO15)
+
+**6. Connect LED**
+
+>LED GND  -> PIN09
+
+>LED VCC  -> PIN11 (GPIO17) - use 500 ohm resistor
+
+**7. Connect Camera Button**
+
+PIN33 & PIN34 (This is for test purposes only. DO NOT connect GPS EXTINT here!!!)
+
+**8. Connect Shutdown Button**
+
+PIN33 & PIN34 (this stops rtkrcv and uploads data to Dropbox, and shuts down Pi)
