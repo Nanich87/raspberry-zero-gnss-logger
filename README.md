@@ -95,3 +95,19 @@ PIN39 & PIN40 (this stops rtkrcv and uploads data to Dropbox, and shuts down Pi)
 #Huawei E353/E3131
 
 ATTR{idVendor}=="12d1", ATTR{idProduct}=="1f01", RUN +="usb_modeswitch '%b/%k'" 
+
+**10. Automatically Mount USB Drives**
+
+>sudo apt install git
+
+>git clone https://github.com/rbrito/usbmount
+
+>sudo apt install debhelper build-essential
+
+>cd usbmount
+
+>dpkg-buildpackage -us -uc -b
+
+>cd ..
+
+>sudo dpkg -i package_name.deb

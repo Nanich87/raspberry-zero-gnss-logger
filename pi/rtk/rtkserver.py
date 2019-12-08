@@ -14,6 +14,9 @@ import os
 import signal
 import sys
 
+import reach_tools
+import gps_time
+
 import dropbox
 from dropbox.files import WriteMode
 from dropbox.exceptions import ApiError, AuthError
@@ -63,6 +66,16 @@ def saveMark():
 	logging.info(rtk.mark)
 
 	semaphore.release()
+
+def setCorrectTime():
+	# determine if we have ntp service ready or we need gps time
+
+	if not gps_time.time_synchronised_by_ntp():
+		# wait for gps time
+		print("Time is not synced by NTP")
+		gps_time.set_gps_time("/dev/serial0", 115200)
+
+	print("Time is synced by NTP!")
 
 def launchRover(config_name = None):
 	semaphore.acquire()
@@ -153,6 +166,9 @@ if __name__ == "__main__":
 		camera_button = Button(CAMERA_PIN_NUMBER)
 		camera_button.when_pressed = saveMark
 
+		time_thread = Thread(target = setCorrectTime)
+		time_thread.start()
+		
 		res = launchRover(CONFIG_NAME)
 		if res == 1:
 			startRover()
