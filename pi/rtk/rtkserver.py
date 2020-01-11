@@ -13,6 +13,7 @@ import time
 import os
 import signal
 import sys
+from shutil import copyfile
 
 import reach_tools
 import gps_time
@@ -23,40 +24,62 @@ from dropbox.exceptions import ApiError, AuthError
 
 RTKLIB_PATH = "/home/pi/RTKLIB"
 CONFIG_NAME = "/home/pi/f9p_navi.conf"
-CAMERA_LOG_PATH = "/home/pi/rtk/rtk.log"
+#CONFIG_NAME = "/home/pi/6m_navi.conf"
+LOG_PATH = '/home/pi/log/'
+DROPBOX_PATH = '/TimeMark/'
 
-CAMERA_PIN_NUMBER = 13
+SERIAL_PORT_BAUD_RATE = 460800
+
+CAMERA_PIN_NUMBER = 20
 SHUTDOWN_PIN_NUMBER = 21
 GREEN_LED_PIN_NUMBER = 17
+BLUE_LED_PIN_NUMBER = 27
+ORANGE_LED_PIN_NUMBER = 22
 
 TOKEN = ''
-LOCALFILE = '/home/pi/rtk/rtk.log'
-BACKUPPATH = '/RTKLIB/rtk.log'
 
-logging.basicConfig(level=logging.INFO,filename=CAMERA_LOG_PATH,format='%(asctime)s %(message)s')
+time_mark_log_file = time.strftime("%Y-%m-%d-%H-%M-%S") + '.log';
+time_mark_log_path = os.path.join(LOG_PATH, time_mark_log_file)
+
+logging.basicConfig(level=logging.INFO,filename=time_mark_log_path,format='%(asctime)s %(message)s')
 
 semaphore = Semaphore()
 rtk = RtkController(RTKLIB_PATH)
 server_not_interrupted = True
+time_is_synchronized = False
 
-def backup():
-	with open(LOCALFILE, 'rb') as f:
-		# We use WriteMode=overwrite to make sure that the settings in the file
-		# are changed on upload
+def backupDropbox():
+	files = os.listdir(LOG_PATH)
+	files.sort()
+	for file in files:
+		path = os.path.join(LOG_PATH,file)
+		uploadFile(file,path)
 
-		print("Uploading " + LOCALFILE + " to Dropbox as " + BACKUPPATH + "...")
+def backupExternalStorage():
+	files = os.listdir(LOG_PATH)
+	files.sort()
+	for file in files:
+		src = os.path.join(LOG_PATH, file)
+		dst = os.path.join('/media/usb/', file)
+
+		copyfile(src, dst)
+		print(file)
+
+def uploadFile(file,path):
+	dropbox_path = os.path.join(DROPBOX_PATH, file)
+
+	with open(path, 'rb') as f:
+		print("Uploading " + file + " to Dropbox as " + dropbox_path + "...")
 
 		try:
-			dbx.files_upload(f.read(), BACKUPPATH, mode=WriteMode('overwrite'))
+				dbx.files_upload(f.read(), dropbox_path, mode=WriteMode('add'))
 		except ApiError as err:
-			# This checks for the specific error where a user doesn't have
-			# enough Dropbox space quota to upload this file
-			if (err.error.is_path() and err.error.get_path().reason.is_insufficient_space()):
-				print("ERROR: Cannot back up; insufficient space.")
-			elif err.user_message_text:
-				print(err.user_message_text)
-			else:
-				print(err)
+				if (err.error.is_path() and err.error.get_path().reason.is_insufficient_space()):
+						print("ERROR: Cannot back up; insufficient space.")
+				elif err.user_message_text:
+						print(err.user_message_text)
+				else:
+						print(err)
 
 def saveMark():
 	semaphore.acquire()
@@ -68,14 +91,13 @@ def saveMark():
 	semaphore.release()
 
 def setCorrectTime():
-	# determine if we have ntp service ready or we need gps time
-
 	if not gps_time.time_synchronised_by_ntp():
-		# wait for gps time
 		print("Time is not synced by NTP")
-		gps_time.set_gps_time("/dev/serial0", 115200)
 
-	print("Time is synced by NTP!")
+		gps_time.set_gps_time("/dev/serial0", SERIAL_PORT_BAUD_RATE)
+
+		global time_is_synchronized
+		time_is_synchronized = True
 
 def launchRover(config_name = None):
 	semaphore.acquire()
@@ -160,38 +182,63 @@ def shutdownRover():
 
 if __name__ == "__main__":
 	shutdown_button = Button(SHUTDOWN_PIN_NUMBER)
+
 	green_led = LED(GREEN_LED_PIN_NUMBER)
+	blue_led = LED(BLUE_LED_PIN_NUMBER)
+	orange_led = LED(ORANGE_LED_PIN_NUMBER)
 
 	try:
 		camera_button = Button(CAMERA_PIN_NUMBER)
 		camera_button.when_pressed = saveMark
 
+		blue_led.blink()
+
 		time_thread = Thread(target = setCorrectTime)
 		time_thread.start()
-		
+
+		while time_is_synchronized == False:
+			time.sleep(5)
+
+		blue_led.on()
+
 		res = launchRover(CONFIG_NAME)
 		if res == 1:
 			startRover()
+
 			green_led.on()
+		else:
+			orange_led.on()
 
 		shutdown_button.wait_for_press()
+
+		print("Shutdown button pressed...")
+
 		green_led.blink()
 
 		if (len(TOKEN) > 0):
-			# Create an instance of a Dropbox class, which can make requests to the API.
 			print("Creating a Dropbox object...")
 			dbx = dropbox.Dropbox(TOKEN)
 
-			# Check that the access token is valid
+			user_is_authorized = False
+
 			try:
 				dbx.users_get_current_account()
+
+				user_is_authorized = True
+
 			except AuthError:
-				print("ERROR: Invalid access token; try re-generating an access token from the app console on the web.")
+				print("Invalid access token; try re-generating an access token from the app console on the web.")
 
-			backup();
-			green_led.off()
+			if user_is_authorized == True:
+				backupDropbox();
 
-			print("Done!")
+				print("Done uploading to Dropbox!")
+
+			else:
+				print("User is not authorized!")
+				orange_led.blink()
+
+		green_led.off()
 
 	except KeyboardInterrupt:
 		print("Server interrupted by user!")
@@ -200,5 +247,16 @@ if __name__ == "__main__":
 		stopRover()
 		shutdownRover()
 
-	os.system("sudo shutdown -h now")
+		time.sleep(5)
 
+		blue_led.blink()
+		print("Copying files to USB...")
+
+		try:
+			backupExternalStorage()
+		except:
+			print("Error occured while trying to copy log files to external storage device!")
+
+		blue_led.off()
+
+		os.system("sudo shutdown -h now")

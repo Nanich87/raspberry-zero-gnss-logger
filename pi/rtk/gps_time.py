@@ -98,6 +98,8 @@ def set_gps_time(serial_device, baud_rate):
 		
 	port.close()
 
+    port.close()
+
 class MSG_NAV_TIMEUTC:
     msg_start = [0xb5, 0x62, 0x01, 0x21, 0x14, 0x00]
     msg_length = 28
@@ -182,4 +184,3 @@ class MSG_NAV_TIMEUTC:
         time = datetime[3:]
 
         return date, time
-
