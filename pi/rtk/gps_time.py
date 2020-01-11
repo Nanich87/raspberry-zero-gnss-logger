@@ -54,10 +54,10 @@ def update_system_time(date, time):
     print(time)
     # busybox date cmd can use a following format
     # YYYY.MM.DD-hh:mm:ss
-    printable_date = ".".join(str(x) for x in date)
+    printable_date = "-".join(str(x) for x in date)
     printable_time = ":".join(str(x) for x in time)
 
-    datetime_string = printable_date + "-" + printable_time
+    datetime_string = printable_date + " " + printable_time
     cmd = ["date", "-s", datetime_string]
     out = subprocess.check_output(cmd)
 
@@ -95,6 +95,8 @@ def set_gps_time(serial_device, baud_rate):
 
     if ntp_not_synced:
         update_system_time(date, time)
+		
+	port.close()
 
 class MSG_NAV_TIMEUTC:
     msg_start = [0xb5, 0x62, 0x01, 0x21, 0x14, 0x00]
@@ -119,7 +121,7 @@ class MSG_NAV_TIMEUTC:
 
         if self.time_valid:
             to_print += "Time data is valid\n"
-            to_print += ".".join(str(x) for x in self.date)
+            to_print += "-".join(str(x) for x in self.date)
             to_print += " "
             to_print += ":".join(str(x) for x in self.time)
         else:
