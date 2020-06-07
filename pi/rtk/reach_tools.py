@@ -32,21 +32,3 @@ def run_command_safely(cmd):
 
     return out
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

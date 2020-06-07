@@ -95,8 +95,6 @@ def set_gps_time(serial_device, baud_rate):
 
     if ntp_not_synced:
         update_system_time(date, time)
-		
-	port.close()
 
     port.close()
 
@@ -123,7 +121,7 @@ class MSG_NAV_TIMEUTC:
 
         if self.time_valid:
             to_print += "Time data is valid\n"
-            to_print += "-".join(str(x) for x in self.date)
+            to_print += ".".join(str(x) for x in self.date)
             to_print += " "
             to_print += ":".join(str(x) for x in self.time)
         else:

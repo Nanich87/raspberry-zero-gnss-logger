@@ -1,3 +1,5 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 # ReachView code is placed under the GPL license.
 # Written by Egor Fedorov (egor.fedorov@emlid.com)
 # Copyright (c) 2015, Emlid Limited
@@ -26,281 +28,300 @@ import signal
 import pexpect
 from threading import Semaphore, Thread
 
+
 # This module automates working with RTKRCV directly
 # You can get sat levels, current status, start and restart the software
 
 class RtkController:
 
-    def __init__(self, rtklib_path):
+	def __init__(self, rtklib_path):
 
-        self.bin_path = rtklib_path + "/app/rtkrcv/gcc"
-        self.config_path = rtklib_path + "/app/rtkrcv"
+		self.bin_path = rtklib_path + '/app/rtkrcv/gcc'
+		self.config_path = rtklib_path + '/app/rtkrcv'
 
-        self.child = 0
+		self.child = 0
 
-	self.mark = {}
-        self.status = {}
-        self.obs_rover = {}
-        self.obs_base = {}
-        self.info = {}
-        self.semaphore = Semaphore()
+		self.mark = {}
+		self.status = {}
+		self.obs_rover = {}
+		self.obs_base = {}
+		self.info = {}
+		self.semaphore = Semaphore()
 
-        self.started = False
-        self.launched = False
-        self.current_config = ""
+		self.started = False
+		self.launched = False
+		self.current_config = ''
 
-    def expectAnswer(self, last_command = ""):
-        a = self.child.expect(["rtkrcv>", pexpect.EOF, "error"])
+	def expectAnswer(self, last_command=''):
+		a = self.child.expect(['rtkrcv>', pexpect.EOF, 'error'])
 
-        if a == 1:
-            print("got EOF while waiting for rtkrcv> . Shutting down")
-            print("This means something went wrong and rtkrcv just stopped")
-            print("output before exception: " + str(self.child))
-            return -1
+		if a == 1:
+			print("got EOF while waiting for rtkrcv> . Shutting down")
+			print("This means something went wrong and rtkrcv just stopped")
+			print("output before exception: " + str(self.child))
+			return -1
 
-        if a == 2:
-            print("Could not " + last_command + ". Please check path to binary or config name")
-            print("You may also check serial port for availability")
-            return -2
+		if a == 2:
+			print("Could not " + last_command + ". Please check path to binary or config name")
+			print("You may also check serial port for availability")
+			return -2
 
-        return 1
+		return 1
 
-    def launch(self, config_name = None):
-        if config_name is None:
-            config_name = "rtkrcv.conf"
+	def launch(self, config_name=None):
+		if config_name is None:
+			config_name = 'rtkrcv.conf'
 
-        if not self.launched:
+		if not self.launched:
 
-            self.semaphore.acquire()
+			self.semaphore.acquire()
 
-            if "/" in config_name:
-                spawn_command = self.bin_path + "/rtkrcv -o " + config_name
-            else:
-                spawn_command = self.bin_path + "/rtkrcv -o " + self.config_path + "/" + config_name
+			if '/' in config_name:
+				spawn_command = self.bin_path + '/rtkrcv -o ' \
+					+ config_name
+			else:
+				spawn_command = self.bin_path + '/rtkrcv -o ' \
+					+ self.config_path + '/' + config_name
 
-            self.child = pexpect.spawn(spawn_command, cwd = self.bin_path, echo = False)
+			self.child = pexpect.spawn(spawn_command,
+					cwd=self.bin_path, echo=False)
 
-            print('Launching rtklib with: "' + spawn_command + '"')
+			print("Launching rtklib with: " + spawn_command)
 
-            if self.expectAnswer("spawn") < 0:
-                self.semaphore.release()
-                return -1
+			if self.expectAnswer('spawn') < 0:
+				self.semaphore.release()
+				return -1
 
-            self.semaphore.release()
-            self.launched = True
-            self.current_config = config_name
+			self.semaphore.release()
+			self.launched = True
+			self.current_config = config_name
 
-            # launch success
-            return 1
+			# launch success
 
-        # already launched
-        return 2
+			return 1
 
-    def shutdown(self):
+		# already launched
 
-        if self.launched:
-            self.semaphore.acquire()
+		return 2
 
-            self.child.kill(signal.SIGUSR2)
+	def shutdown(self):
 
-            try:
-                self.child.wait()
-            except pexpect.ExceptionPexpect:
-                print("Already dead!")
+		if self.launched:
+			self.semaphore.acquire()
 
-            if self.child.isalive():
-                r = -1
-            else:
-                r = 1
+			self.child.kill(signal.SIGUSR2)
 
-            self.semaphore.release()
-            self.launched = False
+			try:
+				self.child.wait()
+			except pexpect.ExceptionPexpect:
+				print("Already dead!")
 
-            return r
+			if self.child.isalive():
+				r = -1
+			else:
+				r = 1
 
-        # already shut down
-        return 2
+			self.semaphore.release()
+			self.launched = False
 
+			return r
 
-    def start(self):
+		# already shut down
 
-        if not self.started:
-            self.semaphore.acquire()
+		return 2
 
-            self.child.send("start\r\n")
+	def start(self):
 
-            if self.expectAnswer("start") < 0:
-                self.semaphore.release()
-                return -1
+		if not self.started:
+			self.semaphore.acquire()
 
-            self.semaphore.release()
-            self.started = True
+			self.child.send('start\r\n')
 
-            return 1
+			if self.expectAnswer('start') < 0:
+				self.semaphore.release()
+				return -1
 
-        # already started
-        return 2
+			self.semaphore.release()
+			self.started = True
 
-    def stop(self):
+			return 1
 
-        if self.started:
-            self.semaphore.acquire()
+		# already started
 
-            self.child.send("stop\r\n")
+		return 2
 
-            if self.expectAnswer("stop") < 0:
-                self.semaphore.release()
-                return -1
+	def stop(self):
 
-            self.semaphore.release()
+		if self.started:
+			self.semaphore.acquire()
 
-            self.started = False
+			self.child.send('stop\r\n')
 
-            return 1
+			if self.expectAnswer('stop') < 0:
+				self.semaphore.release()
+				return -1
 
-        # already stopped
-        return 2
+			self.semaphore.release()
 
-    def restart(self):
+			self.started = False
 
-        if self.started:
-            self.semaphore.acquire()
+			return 1
 
-            self.child.send("restart\r\n")
+		# already stopped
 
-            if self.expectAnswer("restart") < 0:
-                self.semaphore.release()
-                return -1
+		return 2
 
-            self.semaphore.release()
+	def restart(self):
 
-            return 3
-        else:
-            return self.start()
+		if self.started:
+			self.semaphore.acquire()
 
-    def loadConfig(self, config_name = "rtkrcv.conf"):
+			self.child.send('restart\r\n')
 
-        self.semaphore.acquire()
+			if self.expectAnswer('restart') < 0:
+				self.semaphore.release()
+				return -1
 
-        if "/" not in config_name:
-            self.child.send("load " + "../" + config_name + "\r\n")
-        else:
-            self.child.send("load " + config_name + "\r\n")
+			self.semaphore.release()
 
-        if self.expectAnswer("load config") < 0:
-            self.semaphore.release()
-            return -1
+			return 3
+		else:
+			return self.start()
 
-        self.semaphore.release()
+	def loadConfig(self, config_name='rtkrcv.conf'):
 
-        self.current_config = config_name
+		self.semaphore.acquire()
 
-        return 1
+		if '/' not in config_name:
+			self.child.send('load ' + '../' + config_name + '\r\n')
+		else:
+			self.child.send('load ' + config_name + '\r\n')
 
-    def getStatus(self):
+		if self.expectAnswer('load config') < 0:
+			self.semaphore.release()
+			return -1
 
-        self.semaphore.acquire()
+		self.semaphore.release()
 
-        self.child.send("status\r\n")
+		self.current_config = config_name
 
-        if self.expectAnswer("get status") < 0:
-            self.semaphore.release()
-            return -1
+		return 1
 
-        status = self.child.before.split("\r\n")
+	def getStatus(self):
 
-        if status != {}:
-            for line in status:
-                spl = line.split(":", 1)
+		self.semaphore.acquire()
 
-                if len(spl) > 1:
+		self.child.send('status\r\n')
 
-                    param = spl[0].strip()
-                    value = spl[1].strip()
+		if self.expectAnswer('get status') < 0:
+			self.semaphore.release()
+			return -1
 
-                    self.status[param] = value
+		status = self.child.before.split('\r\n')
 
-        self.semaphore.release()
+		if status != {}:
+			for line in status:
+				spl = line.split(':', 1)
 
-        return 1
+				if len(spl) > 1:
 
-    def getMark(self):
+					param = spl[0].strip()
+					value = spl[1].strip()
 
-	self.semaphore.acquire()
+					self.status[param] = value
 
-	self.child.send("mark\r\n")
+		self.semaphore.release()
 
-	if self.expectAnswer("mark") < 0:
-	    self.semaphore.release()
-	    return -1
+		return 1
 
-	mark = self.child.before.split("\r\n")
+	def getMark(self):
 
-	if mark != {}:
-		for line in mark:
-			if "$MARK" in line:
-				self.mark["mark"] = line
+		self.semaphore.acquire()
 
-	self.semaphore.release()
+		self.child.send('mark\r\n')
 
-	return 1
+		if self.expectAnswer('mark') < 0:
+			self.semaphore.release()
+			return -1
 
-    def getObs(self):
+		mark = self.child.before.split('\r\n')
 
-        self.semaphore.acquire()
+		if mark != {}:
+			for line in mark:
+				if '$MARK' in line:
+					self.mark['mark'] = line
 
-        self.obs_rover = {}
-        self.obs_base = {}
+		self.semaphore.release()
 
-        self.child.send("obs\r\n")
+		return 1
 
-        if self.expectAnswer("get obs") < 0:
-            self.semaphore.release()
-            return -1
+	def getObs(self):
 
-        obs = self.child.before.split("\r\n")
-        obs = filter(None, obs)
+		self.semaphore.acquire()
 
-        matching_strings = [s for s in obs if "SAT" in s]
+		self.obs_rover = {}
+		self.obs_base = {}
 
-        if matching_strings != []:
-            # find the header of the OBS table
-            header_index = obs.index(matching_strings[0])
+		self.child.send('obs\r\n')
 
-            # split the header string into columns
-            header = obs[header_index].split()
+		if self.expectAnswer('get obs') < 0:
+			self.semaphore.release()
+			return -1
 
-            if "S1" in header:
-                # find the indexes of the needed columns
-                sat_name_index = header.index("SAT")
-                sat_level_index = header.index("S1")
-                sat_input_source_index = header.index("R")
+		obs = self.child.before.split('\r\n')
+		obs = filter(None, obs)
 
-                if len(obs) > (header_index + 1):
-                    # we have some info about the actual satellites:
+		matching_strings = [s for s in obs if 'SAT' in s]
 
-                    self.obs_rover = {}
-                    self.obs_base = {}
+		if matching_strings != []:
 
-                    for line in obs[header_index+1:]:
-                        spl = line.split()
+			# find the header of the OBS table
 
-                        if len(spl) > sat_level_index:
-                            name = spl[sat_name_index]
-                            level = spl[sat_level_index]
+			header_index = obs.index(matching_strings[0])
 
-                            # R parameter corresponds to the input source number
-                            if spl[sat_input_source_index] == "1":
-                                # we consider 1 to be rover,
-                                self.obs_rover[name] = level
-                            elif spl[sat_input_source_index] == "2":
-                                # 2 to be base
-                                self.obs_base[name] = level
+			# split the header string into columns
 
-                else:
-                    self.obs_base = {}
-                    self.obs_rover = {}
+			header = obs[header_index].split()
 
-        self.semaphore.release()
+			if 'S1' in header:
 
-        return 1
+				# find the indexes of the needed columns
+
+				sat_name_index = header.index('SAT')
+				sat_level_index = header.index('S1')
+				sat_input_source_index = header.index('R')
+
+				if len(obs) > header_index + 1:
+
+					# we have some info about the actual satellites:
+
+					self.obs_rover = {}
+					self.obs_base = {}
+
+					for line in obs[header_index + 1:]:
+						spl = line.split()
+
+						if len(spl) > sat_level_index:
+							name = spl[sat_name_index]
+							level = spl[sat_level_index]
+
+							# R parameter corresponds to the input source number
+
+							if spl[sat_input_source_index] == '1':
+
+								# we consider 1 to be rover,
+
+								self.obs_rover[name] = level
+							elif spl[sat_input_source_index] == '2':
+
+								# 2 to be base
+
+								self.obs_base[name] = level
+				else:
+
+					self.obs_base = {}
+					self.obs_rover = {}
+
+		self.semaphore.release()
+
+		return 1
