@@ -6,13 +6,13 @@ $(document).ready(function () {
     socket.on("connect", function () {
         $("#start").prop('disabled', true);
         $("#stop").prop('disabled', true);
-        $("#output").append('<p class="m-0 p-1 text-success">Connected</p>');
+        $("#output").append('<p class="m-0 p-0 text-success">Connected</p>');
     });
 
     socket.on('disconnect', function () {
         $("#start").prop('disabled', true);
         $("#stop").prop('disabled', true);
-        $("#output").append('<p class="m-0 p-1 text-danger">Disconnected</p>');
+        $("#output").append('<p class="m-0 p-0 text-danger">Disconnected</p>');
     });
 
     socket.on('state', function (state) {
@@ -27,10 +27,10 @@ $(document).ready(function () {
 
     socket.on("message", function (message) {
         $("#output")
-            .append('<p class="m-0 p-0">' + message + '</p>')
+            .append('<p class="m-0 p-0 text-info">' + message + '</p>')
             .stop()
             .animate({
-                scrollTop: $('#output')[0].scrollHeight
+                scrollTop: $('#output')[0].scrollHeight,
             });
     });
 
@@ -44,5 +44,13 @@ $(document).ready(function () {
 
     $("#stop").click(function () {
         socket.emit("stop");
+    });
+
+    $("#restart").click(function () {
+        socket.emit("restart");
+    });
+
+    $("#shutdown").click(function () {
+        socket.emit("shutdown");
     });
 });
