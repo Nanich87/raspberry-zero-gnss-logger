@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}" crossorigin="anonymous">
+    <title>Control Panel</title>
+</head>
+
+<body>
+    <div class="container">
+        <div class="row">
+            <div class="col">
+                <h1>RTKLIB Control Panel</h1>
+            </div>
+        </div>
+        <div class="row mt-5">
+            <div class="col-sm text-center">
+                <button id="sync" type="button" class="btn btn-primary">Sync Time</button>
+            </div>
+            <div class="col-sm text-center">
+                <button id="start" type="button" class="btn btn-success">Start Rover</button>
+            </div>
+            <div class="col-sm text-center">
+                <button id="stop" type="button" class="btn btn-danger">Stop Rover</button>
+            </div>
+        </div>
+        <div class="row bg-light text-dark mt-5">
+            <div id="output" class="w-100 p-3 overflow-auto" style="height: 400px;"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='jquery.min.js') }}" crossorigin="anonymous"></script>
+    <script src="{{ url_for('static', filename='bootstrap.min.js') }}" crossorigin="anonymous"></script>
+    <script src="{{ url_for('static', filename='socket.io.js') }}" crossorigin="anonymous"></script>
+    <script src="{{ url_for('static', filename='main.js') }}" crossorigin="anonymous"></script>
+</body>
+
+</html>
