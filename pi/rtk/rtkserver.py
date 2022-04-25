@@ -1,43 +1,39 @@
 #!/usr/bin/python
-from gpiozero import Button
 from gpiozero import LED
-
 from RtkController import RtkController
 
 from subprocess import check_output, Popen, PIPE
 from threading import Semaphore, Thread
 
+import subprocess
 import logging
 import json
 import time
 import os
 import signal
 import sys
-from shutil import copyfile
 
 import reach_tools
 import gps_time
 
-from flask import Flask, render_template
+from flask import Flask, render_template, send_file
 from flask_socketio import SocketIO
 
-#RTKLIB_PATH = "/home/pi/RTKLIB"
-RTKLIB_PATH = "/home/pi/RTKLIB_2.4.3"
-#CONFIG_NAME = "/home/pi/f9p_navi.conf"
+# RTKLIB
+RTKLIB_PATH = "/home/pi/RTKLIB"
 CONFIG_NAME = "/home/pi/6m_navi.conf"
-LOG_PATH = '/home/pi/log/'
+LOG_PATH = "/home/pi/log/"
+STR2STR_PATH = "app/consapp/str2str/gcc/str2str"
 
-#SERIAL_PORT_BAUD_RATE = 460800
+# Serial
 SERIAL_PORT_BAUD_RATE = 115200
 
-# GPIO Config
-CAMERA_PIN_NUMBER = 20
-SHUTDOWN_PIN_NUMBER = 21
-GREEN_LED_PIN_NUMBER = 19
+# LEDs
 BLUE_LED_PIN_NUMBER = 6
+GREEN_LED_PIN_NUMBER = 5
 ORANGE_LED_PIN_NUMBER = 13
 
-# SocketIO Config
+# SocketIO
 SOCKET_HOST = "0.0.0.0"
 SOCKET_PORT = 80
 SOCKET_NAMESPACE = "/test"
@@ -56,6 +52,8 @@ semaphore = Semaphore()
 rtk = RtkController(RTKLIB_PATH)
 server_not_interrupted = False
 time_is_synchronized = False
+wifi_is_enabled = True
+proc = None
 
 def initLogging():
 	time_mark_log_file = time.strftime("%Y-%m-%d-%H-%M-%S") + '.log';
@@ -67,26 +65,6 @@ def sendMessage(message, debug = True):
 	socketio.emit("message", message, namespace=SOCKET_NAMESPACE)
 	if debug == True:
 		print(message)
-
-def backupExternalStorage():
-	files = os.listdir(LOG_PATH)
-	files.sort()
-	for file in files:
-		src = os.path.join(LOG_PATH, file)
-		dst = os.path.join('/media/usb/', file)
-
-		copyfile(src, dst)
-		print(file)
-
-
-def saveMark():
-	semaphore.acquire()
-
-	rtk.getMark()
-	print(rtk.mark)
-	logging.info(rtk.mark)
-
-	semaphore.release()
 
 def setCorrectTime():
 	if not gps_time.time_synchronised_by_ntp():
@@ -201,13 +179,27 @@ def stop():
 	socketio.emit("state", False, namespace=SOCKET_NAMESPACE)
 
 	green_led.off()
-	orange_led.off();
+	orange_led.off()
+
+def str2str():
+	global proc
+	if proc is None:
+		args = os.path.join(RTKLIB_PATH, STR2STR_PATH) + ' -in serial://serial0:' + '{0}'.format(SERIAL_PORT_BAUD_RATE) + ':8:n:1:off -out '+ os.path.join(LOG_PATH, time.strftime("%Y-%m-%d-%H-%M-%S")) + '.ubx'
+		proc = subprocess.Popen(args, shell=True, stdout=subprocess.PIPE, preexec_fn=os.setsid)
+		socketio.emit("str2str", True, namespace=SOCKET_NAMESPACE)
+		sendMessage("Str2Str started")
+		sendMessage(args)
+	else:
+		os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+		proc = None
+		socketio.emit("str2str", False, namespace=SOCKET_NAMESPACE)
+		sendMessage("Str2Str stopped")
 
 def sync():
-        if time_is_synchronized == True:
-                sendMessage("Time is synced")
-                return
-        
+	if time_is_synchronized == True:
+		sendMessage("Time is synced")
+		return
+
 	blue_led.blink()
 
 	time_thread = Thread(target = setCorrectTime)
@@ -227,7 +219,12 @@ def turnOffLeds():
 
 @app.route("/")
 def index():
-	return render_template("index.html")
+	files = os.listdir(LOG_PATH)
+	return render_template("index.html", files=files)
+
+@app.route("/download/<file>")
+def getPath(file):
+	return send_file(os.path.join(LOG_PATH, file), as_attachment=True)
 
 @socketio.on('connect', namespace=SOCKET_NAMESPACE)
 def handleConnect():
@@ -236,6 +233,10 @@ def handleConnect():
 @socketio.on('disconnect', namespace=SOCKET_NAMESPACE)
 def handleDisconnect():
 	print("Disconnected")
+
+@socketio.on('str2str', namespace=SOCKET_NAMESPACE)
+def handleSync():
+        str2str()
 
 @socketio.on('sync', namespace=SOCKET_NAMESPACE)
 def handleSync():
@@ -257,18 +258,24 @@ def handleRestart():
 
 @socketio.on('shutdown', namespace=SOCKET_NAMESPACE)
 def handleShutdown():
-        turnOffLeds()
+	turnOffLeds()
 	os.system("sudo shutdown -h now")
 
-if __name__ == "__main__":
-        initLogging()
+def handleWifi():
+	global wifi_is_enabled
+	if wifi_is_enabled:
+		subprocess.call(['sudo', 'iwconfig', 'wlan0', 'txpower', 'off'])
+		wifi_is_enabled = False
+	else:
+		subprocess.call(['sudo', 'iwconfig', 'wlan0', 'txpower', 'auto'])
+		wifi_is_enabled = True
 
-        green_led = LED(GREEN_LED_PIN_NUMBER)
+if __name__ == "__main__":
+	initLogging()
+
+	green_led = LED(GREEN_LED_PIN_NUMBER)
 	blue_led = LED(BLUE_LED_PIN_NUMBER)
 	orange_led = LED(ORANGE_LED_PIN_NUMBER)
-        
-	button_shutdown = Button(SHUTDOWN_PIN_NUMBER)
-	button_shutdown.when_pressed = handleShutdown
 
 	try:
 		socketio.run(app, host = SOCKET_HOST, port = SOCKET_PORT)

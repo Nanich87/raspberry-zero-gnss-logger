@@ -2,42 +2,45 @@
 <html lang="en">
 
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}" crossorigin="anonymous">
-    <title>Control Panel</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	<link rel="stylesheet" href="{{ url_for('static', filename='font-awesome.min.css') }}" crossorigin="anonymous">
+	<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}" crossorigin="anonymous">
+	<title>Control Panel</title>
 </head>
 
-<body>
-    <div class="container">
-        <div class="row">
-            <div class="col">
-                <h1>RTKLIB Control Panel</h1>
-            </div>
-        </div>
-        <div class="row mt-5">
-            <div class="col-sm text-center">
-                <button id="sync" type="button" class="btn btn-primary btn-block m-1">Sync Time</button>
-            </div>
-            <div class="col-sm text-center">
-                <button id="start" type="button" class="btn btn-success btn-block m-1">Start Rover</button>
-            </div>
-            <div class="col-sm text-center">
-                <button id="stop" type="button" class="btn btn-danger btn-block m-1">Stop Rover</button>
-            </div>
-            <div class="col-sm text-center">
-                <button id="restart" type="button" class="btn btn-danger btn-block m-1">Restart Rover</button>
-            </div>
-            <div class="col-sm text-center">
-                <button id="shutdown" type="button" class="btn btn-danger btn-block m-1">Shutdown Device</button>
-            </div>
-        </div>
-        <div class="row bg-light text-dark mt-5">
-            <div id="output" class="w-100 p-2 overflow-auto" style="height: 400px;"></div>
-        </div>
+<body class="bg-dark">
+	<div class="container bg-light">
+		<div class="row">
+			<div class="col-sm m-1 btn-group" role="group">
+				<button id="str2str" type="button" class="btn btn-primary" data-toggle="tooltip" data-placement="bottom" title="str2str"><i class="fa fa-file"></i></button>
+				<button id="sync" type="button" class="btn btn-info" data-toggle="tooltip" data-placement="bottom" title="Sync Time" ><i class="fa fa-clock-o"></i></button>
+				<button id="start" type="button" class="btn btn-success" data-toggle="tooltip" data-placement="bottom" title="Start Rover"><i class="fa fa-play"></i></button>
+				<button id="stop" type="button" class="btn btn-danger" data-toggle="tooltip" data-placement="bottom" title="Stop Rover"><i class="fa fa-stop"></i></button>
+				<button id="restart" type="button" class="btn btn-danger" data-toggle="tooltip" data-placement="bottom" title="Restart Rover"><i class="fa fa-refresh"></i></button>
+				<button id="shutdown" type="button" class="btn btn-danger" data-toggle="tooltip" data-placement="bottom" title="Shutdown Device"><i class="fa fa-power-off"></i></button>
+			</div>
+		</div>
+		<div class="row mt-1">
+			<div class="col-sm m-1 p-2 text-center bg-primary text-white">Messages</div>
+			<div class="col-sm m-1 p-2 text-center bg-primary text-white">Logs</div>
+		</div>
+		<div class="row">
+			<div id="output" class="bg-light text-dark col-sm m-1 p-2 overflow-auto" style="height: 400px;"></div>
+			<div id="files" class="bg-light text-dark col-sm m-1 p-2 overflow-auto" style="height: 400px;">
+				<ul>
+					{% for path in files %}
+					<li>
+						<a href="{{ url_for('getPath', file=path) }}">{{ path }}</a>
+					</li>
+					{% endfor %}
+				</ul>
+			</div>
+		</div>
     </div>
 
     <script src="{{ url_for('static', filename='jquery.min.js') }}" crossorigin="anonymous"></script>
+    <script src="{{ url_for('static', filename='popper.min.js') }}" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', filename='bootstrap.min.js') }}" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', filename='socket.io.js') }}" crossorigin="anonymous"></script>
     <script src="{{ url_for('static', filename='main.js') }}" crossorigin="anonymous"></script>

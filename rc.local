@@ -17,6 +17,10 @@ if [ "$_IP" ]; then
   printf "My IP address is %s\n" "$_IP"
 fi
 
+# Turn off HDMI
+/usr/bin/tvservice -o
+
+# Start RTK Server
 python /home/pi/rtk/rtkserver.py &
 
 exit 0
