@@ -54,6 +54,14 @@ $(document).ready(function () {
             });
     });
 
+    socket.on("cpu", function (cpu) {
+        $("#cpu").html(cpu.toFixed(1) + "&#176;C");
+    });
+
+    socket.on("load", function (load) {
+        $("#load").html(load.toFixed(0) + "%");
+    });
+
     $("#str2str").click(function () {
         socket.emit("str2str");
     });
@@ -81,4 +89,9 @@ $(document).ready(function () {
     $(function () {
 	$('[data-toggle="tooltip"]').tooltip();
     });
+
+    setInterval(function() {
+        socket.emit("cpu");
+        socket.emit("load");
+    }, 2500);
 });

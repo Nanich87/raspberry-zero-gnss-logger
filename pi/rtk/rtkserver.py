@@ -1,7 +1,6 @@
 #!/usr/bin/python
-from gpiozero import LED
+from gpiozero import LED, CPUTemperature, LoadAverage
 from RtkController import RtkController
-
 from subprocess import check_output, Popen, PIPE
 from threading import Semaphore, Thread
 
@@ -54,6 +53,10 @@ server_not_interrupted = False
 time_is_synchronized = False
 wifi_is_enabled = True
 proc = None
+
+# CPU
+cpu = CPUTemperature()
+la = LoadAverage(min_load_average=0, max_load_average=2)
 
 def initLogging():
 	time_mark_log_file = time.strftime("%Y-%m-%d-%H-%M-%S") + '.log';
@@ -219,7 +222,9 @@ def turnOffLeds():
 
 @app.route("/")
 def index():
-	files = os.listdir(LOG_PATH)
+	#files = os.listdir(LOG_PATH)
+	files = filter(lambda x: os.path.isfile(os.path.join(LOG_PATH, x)), os.listdir(LOG_PATH))
+	files = sorted(files, key = lambda x: os.path.getmtime(os.path.join(LOG_PATH, x)))
 	return render_template("index.html", files=files)
 
 @app.route("/download/<file>")
@@ -260,6 +265,14 @@ def handleRestart():
 def handleShutdown():
 	turnOffLeds()
 	os.system("sudo shutdown -h now")
+
+@socketio.on('cpu', namespace=SOCKET_NAMESPACE)
+def handleCpu():
+	socketio.emit("cpu", cpu.temperature, namespace=SOCKET_NAMESPACE)
+
+@socketio.on('load', namespace=SOCKET_NAMESPACE)
+def handleCpu():
+        socketio.emit("load", la.load_average*100, namespace=SOCKET_NAMESPACE)
 
 def handleWifi():
 	global wifi_is_enabled
