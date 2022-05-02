@@ -10,7 +10,11 @@
 * Device Shutdown
 * File List/Download
 
-## RTKLIB
+## Installation
+
+`2021-05-07-raspios-buster-armhf-lite.img`
+
+### Prerequisites
 
 `sudo apt-get install build-essential`
 
@@ -23,6 +27,8 @@
 `sudo apt-get install libblas3`
 
 `sudo apt-get install gfortran`
+
+### RTKLIB
 
 `cd ~`
 
