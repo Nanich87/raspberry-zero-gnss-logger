@@ -22,6 +22,7 @@
 			<symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M17.7 6.8a8 8 0 1 1-11.4 0"/></symbol>
 			<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M5 20h14"/></symbol>
 			<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1L20.5 8.5"/><path d="M20.5 3.5v5h-5"/></symbol>
+			<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
 			<symbol id="i-clear" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4.5h6V7"/><path d="M6.5 7l1 13h9l1-13"/></symbol>
 		</defs>
 	</svg>
@@ -65,6 +66,17 @@
 				<div class="tile-value">—</div>
 				<div class="meter"><span></span></div>
 			</div>
+		</section>
+
+		<section class="profile-bar">
+			<label for="profile">Receiver</label>
+			<div class="select">
+				<select id="profile" disabled>
+					<option>—</option>
+				</select>
+				<svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+			</div>
+			<span class="profile-hint muted" id="profile-hint"></span>
 		</section>
 
 		<section class="actions" aria-label="Controls">

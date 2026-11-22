@@ -1,0 +1,24 @@
+[Unit]
+Description=Raspberry Zero GNSS Logger (web control panel)
+Documentation=https://github.com/Nanich87/raspberry-zero-gnss-logger
+After=network.target
+
+[Service]
+Type=simple
+# root is needed for port 80, GPIO, "date -s" and "shutdown"
+User=root
+WorkingDirectory=/home/pi/rtk
+Environment=PYTHONUNBUFFERED=1
+
+# Turn off HDMI to save power (tvservice exists only on legacy, non-KMS Raspberry Pi OS)
+ExecStartPre=-/bin/sh -c '[ -x /usr/bin/tvservice ] && /usr/bin/tvservice -o || true'
+ExecStart=/usr/bin/python3 /home/pi/rtk/rtkserver.py
+
+# SIGINT lets rtkserver.py stop rtkrcv cleanly before it exits
+KillSignal=SIGINT
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

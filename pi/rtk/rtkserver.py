@@ -6,6 +6,7 @@ from threading import Lock, Semaphore, Thread
 
 import subprocess
 import logging
+import glob
 import json
 import time
 import os
@@ -21,7 +22,16 @@ from flask_socketio import SocketIO, emit
 
 # RTKLIB
 RTKLIB_PATH = "/home/pi/RTKLIB"
-CONFIG_NAME = "/home/pi/6m_navi.conf"
+CONFIG_NAME = "/home/pi/6m_navi.conf"   # default receiver profile
+
+# Receiver profiles: every *_navi.conf in CONFIG_DIR can be selected in the panel
+CONFIG_DIR = "/home/pi"
+PROFILE_PATTERN = "*_navi.conf"
+PROFILE_NAMES = {
+	"6m_navi.conf": "u-blox NEO-6M",
+	"f9p_navi.conf": "u-blox ZED-F9P",
+}
+SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 LOG_PATH = "/home/pi/log/"
 STR2STR_PATH = "app/consapp/str2str/gcc/str2str"
 
@@ -61,10 +71,35 @@ time_sync_in_progress = False
 wifi_is_enabled = True
 proc = None
 proc_lock = Lock()
+current_profile = os.path.basename(CONFIG_NAME)
 
 # CPU
 cpu = CPUTemperature()
 la = LoadAverage(min_load_average=0, max_load_average=2)
+
+def listProfiles():
+	files = sorted(os.path.basename(f) for f in glob.glob(os.path.join(CONFIG_DIR, PROFILE_PATTERN)))
+	return [{"file": f, "name": PROFILE_NAMES.get(f, f)} for f in files]
+
+def loadProfile():
+	"""Return the saved profile if it still exists, otherwise the default."""
+	try:
+		with open(SETTINGS_FILE) as f:
+			saved = json.load(f).get("profile")
+		if saved in [p["file"] for p in listProfiles()]:
+			return saved
+	except (OSError, ValueError):
+		pass
+	return os.path.basename(CONFIG_NAME)
+
+def saveProfile(name):
+	tmp = SETTINGS_FILE + ".tmp"
+	with open(tmp, "w") as f:
+		json.dump({"profile": name}, f)
+	os.replace(tmp, SETTINGS_FILE)
+
+def profilesPayload():
+	return {"profiles": listProfiles(), "selected": current_profile}
 
 def initLogging():
 	time_mark_log_file = time.strftime("%Y-%m-%d-%H-%M-%S") + '.log';
@@ -196,7 +231,8 @@ def shutdownRover():
 	return res
 
 def start():
-	launchResult = launchRover(CONFIG_NAME)
+	sendMessage("Receiver profile: %s" % PROFILE_NAMES.get(current_profile, current_profile))
+	launchResult = launchRover(os.path.join(CONFIG_DIR, current_profile))
 	if launchResult == 1:
 		startResult = startRover()
 		if startResult != -1:
@@ -306,6 +342,26 @@ def handleConnect():
 	emit("state", server_not_interrupted)
 	emit("str2str", proc is not None)
 	emit("timesync", "pending" if time_sync_in_progress else time_is_synchronized)
+	emit("profiles", profilesPayload())
+
+@socketio.on('profile', namespace=SOCKET_NAMESPACE)
+def handleProfile(name):
+	global current_profile
+
+	if server_not_interrupted:
+		sendMessage("Stop the rover before changing the receiver profile")
+	elif name not in [p["file"] for p in listProfiles()]:
+		sendMessage("Unknown receiver profile: %s" % name)
+	elif name != current_profile:
+		current_profile = name
+		try:
+			saveProfile(name)
+		except OSError as e:
+			sendMessage("Could not save the receiver profile: %s" % e)
+		sendMessage("Receiver profile set to %s" % PROFILE_NAMES.get(name, name))
+
+	# always answer, so the panel shows the real selection
+	socketio.emit("profiles", profilesPayload(), namespace=SOCKET_NAMESPACE)
 
 @socketio.on('disconnect', namespace=SOCKET_NAMESPACE)
 def handleDisconnect():
@@ -357,6 +413,7 @@ def handleWifi():
 
 if __name__ == "__main__":
 	initLogging()
+	current_profile = loadProfile()
 
 	green_led = LED(GREEN_LED_PIN_NUMBER)
 	blue_led = LED(BLUE_LED_PIN_NUMBER)

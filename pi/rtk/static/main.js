@@ -12,6 +12,9 @@
         rover: false,      // rtkrcv running
         logging: false,    // str2str recording
         timesync: false,   // false | "pending" | true
+        profiles: [],      // [{file, name}]
+        profile: null,     // selected profile file
+        profileSaving: false,
         busy: null         // id of the button waiting for a reply
     };
     var busyTimer = null;
@@ -117,6 +120,11 @@
         rec.querySelector(".action-label").textContent = l ? "Stop recording" : "Record raw";
 
         $("start").classList.toggle("is-active", r);
+
+        // receiver profile
+        var sel = $("profile");
+        sel.disabled = !c || r || b || state.profileSaving || state.profiles.length < 2;
+        $("profile-hint").textContent = !c ? "" : r ? "Stop the rover to change" : "";
 
         // status tiles
         if (!c) {
@@ -273,6 +281,28 @@
         else render();
     });
 
+    socket.on("profiles", function (data) {
+        state.profiles = data.profiles || [];
+        state.profile = data.selected;
+        state.profileSaving = false;
+
+        var sel = $("profile");
+        sel.textContent = "";
+        state.profiles.forEach(function (p) {
+            var opt = document.createElement("option");
+            opt.value = p.file;
+            opt.textContent = p.name;
+            sel.appendChild(opt);
+        });
+        if (!state.profiles.length) {
+            var none = document.createElement("option");
+            none.textContent = "No profiles found";
+            sel.appendChild(none);
+        }
+        sel.value = state.profile;
+        render();
+    });
+
     socket.on("message", function (message) {
         log(String(message));
     });
@@ -322,6 +352,12 @@
         log("Shutdown requested. The device will power off.", "warn");
         socket.emit("shutdown");
     }
+
+    $("profile").addEventListener("change", function (e) {
+        state.profileSaving = true;
+        render();
+        socket.emit("profile", e.target.value);
+    });
 
     $("clear-log").addEventListener("click", function () {
         $("output").textContent = "";

@@ -175,19 +175,47 @@ cp ~/raspberry-zero-gnss-logger/pi/*.conf ~/raspberry-zero-gnss-logger/pi/*.cmd 
 
 ### 6. Start on boot
 
-The server has to run as root: it uses port 80, GPIO, `date -s` and `shutdown`. `rc.local` starts it at boot and turns off HDMI to save power.
+The server has to run as root: it uses port 80, GPIO, `date -s` and `shutdown`. Install it as a **systemd service**:
+
+```sh
+sudo cp ~/raspberry-zero-gnss-logger/rtkserver.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now rtkserver
+```
+
+The service:
+
+- starts the server at boot and turns off HDMI to save power;
+- restarts the server automatically if it crashes;
+- sends the server's output to the journal;
+- on stop, shuts down `rtkrcv` and `str2str` cleanly.
+
+Useful commands:
+
+```sh
+systemctl status rtkserver          # is it running?
+journalctl -u rtkserver -f          # follow the server log
+sudo systemctl restart rtkserver    # restart after changing files
+```
+
+To run it by hand for debugging, stop the service first. Otherwise port 80 is already taken.
+
+```sh
+sudo systemctl stop rtkserver
+sudo python3 ~/rtk/rtkserver.py
+```
+
+<details>
+<summary>Alternative: <code>rc.local</code></summary>
+
+The older start-up method still works. Its downside is that the server's output is not saved anywhere and it is not restarted if it crashes. Use it **instead of** the service, not together with it.
 
 ```sh
 sudo cp ~/raspberry-zero-gnss-logger/rc.local /etc/rc.local
 sudo chmod +x /etc/rc.local
-sudo reboot
 ```
 
-To test it by hand without rebooting:
-
-```sh
-sudo python3 ~/rtk/rtkserver.py
-```
+</details>
 
 Then open **`http://<hostname>.local/`**, for example `http://neo-6m.local/`, or the Pi's IP address.
 
@@ -195,17 +223,17 @@ Then open **`http://<hostname>.local/`**, for example `http://neo-6m.local/`, or
 
 ### Choosing the receiver
 
-The receiver profile is set in `pi/rtk/rtkserver.py`:
+Choose the receiver profile in the **Receiver** dropdown in the control panel. You can only change it while the rover is stopped. The choice is saved to `/home/pi/rtk/settings.json` and kept after a reboot.
 
-```python
-CONFIG_NAME = "/home/pi/6m_navi.conf"   # NEO-6M
-# CONFIG_NAME = "/home/pi/f9p_navi.conf" # ZED-F9P
-```
+The dropdown lists every `*_navi.conf` file in `/home/pi`. To add your own profile, copy one of the existing files under a new name, for example `m8t_navi.conf`. To give it a readable name in the dropdown, add it to `PROFILE_NAMES` in `pi/rtk/rtkserver.py`.
 
-Other settings at the top of the same file:
+Other settings at the top of `pi/rtk/rtkserver.py`:
 
 | Setting | Value |
 |---|---|
+| `CONFIG_NAME` | `/home/pi/6m_navi.conf`: the profile used until one is chosen in the panel |
+| `CONFIG_DIR` | `/home/pi`: where to look for `*_navi.conf` profiles |
+| `TIME_SYNC_TIMEOUT` | `900` s: how long to wait for valid GPS time |
 | `RTKLIB_PATH` | `/home/pi/RTKLIB` |
 | `LOG_PATH` | `/home/pi/log/` |
 | `SERIAL_PORT_BAUD_RATE` | `115200` |
@@ -248,8 +276,9 @@ You can also record the rover's input streams by setting `logstr1-type` and `log
 
 ## Using the control panel
 
-| Button | Action | Available when |
+| Control | Action | Available when |
 |---|---|---|
+| **Receiver** dropdown | Chooses the `rtkrcv` profile (NEO-6M, ZED-F9P, …) | Rover stopped |
 | **Start rover** | Launches `rtkrcv` with the selected profile and starts the solution | Rover and recording stopped |
 | **Stop rover** | Stops and shuts down `rtkrcv` | Rover running |
 | **Restart** | Stop, wait 5 s, start | Rover running |
@@ -293,12 +322,14 @@ Process the RINEX files with `rnx2rtkp` or RTKPOST, using base station or CORS d
 │   │   ├── reach_tools.py      Helpers
 │   │   ├── index.html          Control panel page
 │   │   ├── static/             CSS, JS, bundled Socket.IO client
-│   │   └── requirements.txt    Python dependencies
+│   │   ├── requirements.txt    Python dependencies
+│   │   └── settings.json       Selected receiver profile (created at runtime)
 │   ├── 6m_navi.conf, 6m.cmd    NEO-6M rtkrcv profile and receiver commands
 │   ├── f9p_navi.conf, f9p.cmd  ZED-F9P rtkrcv profile and receiver commands
 │   └── RTKLIB/                 RTKLIB submodule (v2.5.1)
 ├── rtkrcv.c                    rtkrcv with the extended "mark" command
-├── rc.local                    Boot script → /etc/rc.local
+├── rtkserver.service           systemd service → /etc/systemd/system
+├── rc.local                    Alternative boot script → /etc/rc.local
 └── images/                     Screenshot
 ```
 
@@ -306,14 +337,14 @@ Process the RINEX files with `rnx2rtkp` or RTKPOST, using base station or CORS d
 
 **The panel doesn't open.**
 
-- Check that the server is running: `ps aux | grep rtkserver`.
-- Run it by hand to see any errors: `sudo python3 ~/rtk/rtkserver.py`.
+- Check that the server is running: `systemctl status rtkserver`.
+- Look for errors in its log: `journalctl -u rtkserver -n 50`.
 - If you see `ModuleNotFoundError`, install the missing package from step 3.
 
 **"rtkrcv launch failed" and the orange LED is on.**
 
 - Check that `/home/pi/RTKLIB/app/consapp/rtkrcv/gcc/rtkrcv` exists, i.e. that RTKLIB was built.
-- Check that `CONFIG_NAME` points to an existing `.conf` file.
+- Check that the profile chosen in the **Receiver** dropdown is the right one for your receiver.
 - Check that nothing else is holding the serial port (raw recording, or a serial console).
 
 **No data, or garbage data, from the receiver.**
