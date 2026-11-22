@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 from gpiozero import LED, CPUTemperature, LoadAverage
 from RtkController import RtkController
 from subprocess import check_output, Popen, PIPE
@@ -42,7 +42,7 @@ app = Flask(__name__)
 app.template_folder = "."
 app.config["SECRET_KEY"] = "secret!"
 app.rejectUnauthorized = False
-app.debug = True
+app.debug = False
 
 socketio = SocketIO(app)
 
@@ -222,8 +222,7 @@ def turnOffLeds():
 
 @app.route("/")
 def index():
-	#files = os.listdir(LOG_PATH)
-	files = filter(lambda x: os.path.isfile(os.path.join(LOG_PATH, x)), os.listdir(LOG_PATH))
+	files = [x for x in os.listdir(LOG_PATH) if os.path.isfile(os.path.join(LOG_PATH, x))]
 	files = sorted(files, key = lambda x: os.path.getmtime(os.path.join(LOG_PATH, x)))
 	return render_template("index.html", files=files)
 
@@ -291,7 +290,9 @@ if __name__ == "__main__":
 	orange_led = LED(ORANGE_LED_PIN_NUMBER)
 
 	try:
-		socketio.run(app, host = SOCKET_HOST, port = SOCKET_PORT)
+		# no reloader: it would run __main__ twice and claim the GPIO pins twice
+		socketio.run(app, host = SOCKET_HOST, port = SOCKET_PORT,
+			use_reloader = False, allow_unsafe_werkzeug = True)
 	except KeyboardInterrupt:
 		print("Server interrupted by user!")
 	finally:

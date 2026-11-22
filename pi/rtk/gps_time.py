@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
 # ReachView code is placed under the GPL license.
 # Written by Egor Fedorov (egor.fedorov@emlid.com)
@@ -29,9 +29,9 @@ import ctypes
 import subprocess
 import reach_tools
 
-def hexify(char_list):
-    """ transform a char list into a list of int values"""
-    return [ord(c) for c in char_list]
+def hexify(data):
+    """ transform bytes read from the serial port into a list of int values"""
+    return list(bytearray(data))
 
 def enable_nav_timeutc(port):
     poll_time_utc = ["b5", "62", "06", "01", "03", "00", "01", "21", "01", "2d", "85"]
@@ -39,9 +39,10 @@ def enable_nav_timeutc(port):
     port.write(msg)
 
 def time_synchronised_by_ntp():
-    out = subprocess.check_output("timedatectl")
+    out = subprocess.check_output("timedatectl").decode("utf-8", errors="replace")
 
-    if "NTP synchronized: yes" in out:
+    # older systemd prints "NTP synchronized", newer "System clock synchronized"
+    if "NTP synchronized: yes" in out or "System clock synchronized: yes" in out:
         return True
     else:
         return False

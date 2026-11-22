@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ReachView code is placed under the GPL license.
 # Written by Egor Fedorov (egor.fedorov@emlid.com)
@@ -84,7 +84,7 @@ class RtkController:
 					+ self.config_path + '/' + config_name
 
 			self.child = pexpect.spawn(spawn_command,
-					cwd=self.bin_path, echo=False)
+					cwd=self.bin_path, echo=False, encoding="utf-8", codec_errors="replace")
 
 			print("Launching rtklib with: " + spawn_command)
 
@@ -269,7 +269,7 @@ class RtkController:
 			return -1
 
 		obs = self.child.before.split('\r\n')
-		obs = filter(None, obs)
+		obs = list(filter(None, obs))
 
 		matching_strings = [s for s in obs if 'SAT' in s]
 

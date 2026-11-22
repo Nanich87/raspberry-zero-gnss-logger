@@ -32,6 +32,16 @@
 
 `sudo apt-get install gfortran`
 
+### Python 3
+
+`sudo apt-get install python3-flask python3-flask-socketio python3-pexpect python3-serial python3-gpiozero python3-simple-websocket`
+
+or
+
+`pip3 install -r /home/pi/rtk/requirements.txt`
+
+The web client bundles Socket.IO v4, which requires Flask-SocketIO 5.3 or newer.
+
 ### RTKLIB
 
 `cd ~`

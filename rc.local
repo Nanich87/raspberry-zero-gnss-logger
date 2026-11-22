@@ -21,6 +21,6 @@ fi
 /usr/bin/tvservice -o
 
 # Start RTK Server
-python /home/pi/rtk/rtkserver.py &
+python3 /home/pi/rtk/rtkserver.py &
 
 exit 0
