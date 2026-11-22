@@ -109,12 +109,28 @@ class RtkController:
 		if self.launched:
 			self.semaphore.acquire()
 
-			self.child.kill(signal.SIGUSR2)
+			# Ask rtkrcv to shut down through its console. Since RTKLIB 2.5
+			# SIGUSR2 alone leaves the console thread waiting for input and
+			# rtkrcv never exits, so the signal is only a fallback.
+			try:
+				if self.child.isalive():
+					self.child.send('shutdown\r\n')
+					self.child.expect(pexpect.EOF, timeout=10)
+			except pexpect.TIMEOUT:
+				print("rtkrcv did not exit after 'shutdown', sending SIGUSR2")
+				self.child.kill(signal.SIGUSR2)
+				try:
+					self.child.expect(pexpect.EOF, timeout=5)
+				except pexpect.TIMEOUT:
+					print("rtkrcv still running, killing it")
+					self.child.terminate(force=True)
+			except pexpect.ExceptionPexpect:
+				print("Already dead!")
 
 			try:
 				self.child.wait()
 			except pexpect.ExceptionPexpect:
-				print("Already dead!")
+				pass
 
 			if self.child.isalive():
 				r = -1

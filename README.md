@@ -48,9 +48,13 @@ The web client bundles Socket.IO v4, which requires Flask-SocketIO 5.3 or newer.
 
 `cd ~`
 
-`git clone https://github.com/rtklibexplorer/RTKLIB.git`
+`git clone --branch v2.5.1 https://github.com/rtklibexplorer/RTKLIB.git`
 
 `cd RTKLIB`
+
+Replace `rtkrcv.c` with the one from this repository. It adds a `$MARK` line with the current position to the output of the `mark` command:
+
+`cp ~/raspberry-zero-gnss-logger/rtkrcv.c app/consapp/rtkrcv/rtkrcv.c`
 
 `cd app`
 
