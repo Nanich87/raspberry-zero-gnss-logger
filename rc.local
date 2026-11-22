@@ -18,7 +18,8 @@ if [ "$_IP" ]; then
 fi
 
 # Turn off HDMI
-/usr/bin/tvservice -o
+# (tvservice exists only on legacy, non-KMS Raspberry Pi OS)
+[ -x /usr/bin/tvservice ] && /usr/bin/tvservice -o || true
 
 # Start RTK Server
 python3 /home/pi/rtk/rtkserver.py &
