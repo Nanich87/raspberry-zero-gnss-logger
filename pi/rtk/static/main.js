@@ -54,7 +54,7 @@
 
     function toneFor(text) {
         var t = text.toLowerCase();
-        if (/fail|error|not synced|disconnected/.test(t)) return "err";
+        if (/fail|error|unexpected|not synced|disconnected/.test(t)) return "err";
         if (/success|started|synced|connected|launched/.test(t)) return "ok";
         if (/attempting|stopp|shutdown/.test(t)) return "muted";
         return "accent";

@@ -323,7 +323,9 @@ Process the RINEX files with `rnx2rtkp` or RTKPOST, using base station or CORS d
 - Check that the serial login console is disabled.
 - Test the port directly: `sudo cat /dev/serial0 | xxd | head`.
 
-**Sync time never finishes.** The receiver has no fix yet, so it does not report a valid UTC time. Move the antenna to a place with a clear view of the sky and wait.
+**"Time sync failed: no valid GPS time".** The receiver did not report a valid UTC time within 15 minutes (`TIME_SYNC_TIMEOUT`). After a cold start it needs a fix and the leap-second count from the almanac, which can take up to 12.5 minutes. Move the antenna to a place with a clear view of the sky and press **Sync time** again.
+
+**"Str2Str stopped unexpectedly".** The recording process exited on its own. The text in brackets is its last error, usually the serial port being busy or missing.
 
 **Log files have dates in 1970 or in the past.** The clock was not synced before recording started. Press **Sync time** first, or give the Pi a network connection so NTP can set it.
 

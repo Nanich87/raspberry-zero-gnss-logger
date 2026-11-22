@@ -2,7 +2,7 @@
 from gpiozero import LED, CPUTemperature, LoadAverage
 from RtkController import RtkController
 from subprocess import check_output, Popen, PIPE
-from threading import Semaphore, Thread
+from threading import Lock, Semaphore, Thread
 
 import subprocess
 import logging
@@ -27,6 +27,11 @@ STR2STR_PATH = "app/consapp/str2str/gcc/str2str"
 
 # Serial
 SERIAL_PORT_BAUD_RATE = 115200
+
+# GPS time sync: give up if no valid UTC time arrives within this many seconds.
+# After a cold start the receiver may need up to 12.5 min to get the leap
+# second count from the almanac before it reports valid UTC.
+TIME_SYNC_TIMEOUT = 15 * 60
 
 # LEDs
 BLUE_LED_PIN_NUMBER = 6
@@ -55,6 +60,7 @@ time_is_synchronized = False
 time_sync_in_progress = False
 wifi_is_enabled = True
 proc = None
+proc_lock = Lock()
 
 # CPU
 cpu = CPUTemperature()
@@ -72,13 +78,37 @@ def sendMessage(message, debug = True):
 		print(message)
 
 def setCorrectTime():
-	if not gps_time.time_synchronised_by_ntp():
-		sendMessage("Time is not synced by NTP")
+	"""Sync the clock (NTP or GPS). Runs in a background task started by sync()."""
+	global time_is_synchronized, time_sync_in_progress
 
-		gps_time.set_gps_time("/dev/serial0", SERIAL_PORT_BAUD_RATE)
+	synced = False
+	try:
+		if gps_time.time_synchronised_by_ntp():
+			sendMessage("Time synced by NTP")
+			synced = True
+		else:
+			sendMessage("No NTP time, waiting for valid GPS time (up to %d min)..." % (TIME_SYNC_TIMEOUT // 60))
+			result = gps_time.set_gps_time("/dev/serial0", SERIAL_PORT_BAUD_RATE, timeout=TIME_SYNC_TIMEOUT)
+			if result == "gps":
+				sendMessage("Time synced from GPS (UTC)")
+				synced = True
+			elif result == "ntp":
+				sendMessage("Time synced by NTP")
+				synced = True
+			else:
+				sendMessage("Time sync failed: no valid GPS time within %d min. Check the antenna and try again." % (TIME_SYNC_TIMEOUT // 60))
+	except Exception as e:
+		sendMessage("Time sync failed: %s" % e)
+	finally:
+		time_sync_in_progress = False
 
-		global time_is_synchronized
+	if synced:
 		time_is_synchronized = True
+		blue_led.on()
+	else:
+		blue_led.off()
+
+	socketio.emit("timesync", synced, namespace=SOCKET_NAMESPACE)
 
 def launchRover(config_name = None):
 	semaphore.acquire()
@@ -188,19 +218,44 @@ def stop():
 	green_led.off()
 	orange_led.off()
 
+def watchStr2str(p):
+	"""Read str2str's output until it exits; report it if it exits on its own."""
+	global proc
+
+	last_line = ""
+	for raw in p.stderr:
+		line = raw.decode("utf-8", errors="replace").strip()
+		if line:
+			last_line = line
+	code = p.wait()
+
+	with proc_lock:
+		if proc is not p:
+			return  # stopped from the panel
+		proc = None
+
+	reason = " (%s)" % last_line if last_line else ""
+	sendMessage("Str2Str stopped unexpectedly, exit code %d%s" % (code, reason))
+	socketio.emit("str2str", False, namespace=SOCKET_NAMESPACE)
+
 def str2str():
 	global proc
-	if proc is None:
-		args = os.path.join(RTKLIB_PATH, STR2STR_PATH) + ' -in serial://serial0:' + '{0}'.format(SERIAL_PORT_BAUD_RATE) + ':8:n:1:off -out '+ os.path.join(LOG_PATH, time.strftime("%Y-%m-%d-%H-%M-%S")) + '.ubx'
-		proc = subprocess.Popen(args, shell=True, stdout=subprocess.PIPE, preexec_fn=os.setsid)
-		socketio.emit("str2str", True, namespace=SOCKET_NAMESPACE)
-		sendMessage("Str2Str started")
-		sendMessage(args)
-	else:
-		os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-		proc = None
-		socketio.emit("str2str", False, namespace=SOCKET_NAMESPACE)
-		sendMessage("Str2Str stopped")
+	with proc_lock:
+		if proc is None:
+			args = os.path.join(RTKLIB_PATH, STR2STR_PATH) + ' -in serial://serial0:' + '{0}'.format(SERIAL_PORT_BAUD_RATE) + ':8:n:1:off -out '+ os.path.join(LOG_PATH, time.strftime("%Y-%m-%d-%H-%M-%S")) + '.ubx'
+			proc = subprocess.Popen(args, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, preexec_fn=os.setsid)
+			socketio.start_background_task(watchStr2str, proc)
+			socketio.emit("str2str", True, namespace=SOCKET_NAMESPACE)
+			sendMessage("Str2Str started")
+			sendMessage(args)
+		else:
+			try:
+				os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+			except ProcessLookupError:
+				pass  # already exited
+			proc = None
+			socketio.emit("str2str", False, namespace=SOCKET_NAMESPACE)
+			sendMessage("Str2Str stopped")
 
 def sync():
 	if time_is_synchronized == True:
@@ -216,17 +271,8 @@ def sync():
 	blue_led.blink()
 	socketio.emit("timesync", "pending", namespace=SOCKET_NAMESPACE)
 
-	time_thread = Thread(target = setCorrectTime)
-	time_thread.start()
-
-	while time_is_synchronized == False:
-		time.sleep(5)
-
-	sendMessage("Time is synced")
-	time_sync_in_progress = False
-	socketio.emit("timesync", True, namespace=SOCKET_NAMESPACE)
-
-	blue_led.on()
+	# don't block the Socket.IO handler; setCorrectTime reports the result
+	socketio.start_background_task(setCorrectTime)
 
 def turnOffLeds():
         blue_led.off()

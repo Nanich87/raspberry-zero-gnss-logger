@@ -28,6 +28,7 @@ import binascii
 import ctypes
 import subprocess
 import reach_tools
+from time import monotonic
 
 def hexify(data):
     """ transform bytes read from the serial port into a list of int values"""
@@ -59,7 +60,8 @@ def update_system_time(date, time):
     printable_time = ":".join(str(x) for x in time)
 
     datetime_string = printable_date + " " + printable_time
-    cmd = ["date", "-s", datetime_string]
+    # the receiver reports UTC; without -u "date" would treat it as local time
+    cmd = ["date", "-u", "-s", datetime_string]
     out = subprocess.check_output(cmd)
 
 def get_gps_time(port):
@@ -77,27 +79,37 @@ def get_gps_time(port):
 
     return None, None
 
-def set_gps_time(serial_device, baud_rate):
+def set_gps_time(serial_device, baud_rate, timeout=None):
+    """Set the system clock from the receiver's UBX NAV-TIMEUTC message.
 
+    Returns "gps" when the clock was set from GPS, "ntp" when NTP synced the
+    clock in the meantime, or None when no valid UTC time arrived within
+    `timeout` seconds. Serial port errors are raised to the caller.
+    """
     port = serial.Serial(serial_device, baud_rate, timeout = 1.5)
-    enable_nav_timeutc(port)
+    try:
+        enable_nav_timeutc(port)
 
-    print("Restarting ntp service for faster sync...")
-    reach_tools.run_command_safely(["timedatectl", "set-ntp", "false"])
-    reach_tools.run_command_safely(["timedatectl", "set-ntp", "true"])
+        print("Restarting ntp service for faster sync...")
+        reach_tools.run_command_safely(["timedatectl", "set-ntp", "false"])
+        reach_tools.run_command_safely(["timedatectl", "set-ntp", "true"])
 
-    print("TIMEUTC enabled")
-    time = None
-    ntp_not_synced = True
+        print("TIMEUTC enabled")
+        deadline = None if timeout is None else monotonic() + timeout
 
-    while time is None and ntp_not_synced:
-        date, time = get_gps_time(port)
-        ntp_not_synced = not time_synchronised_by_ntp()
+        while deadline is None or monotonic() < deadline:
+            date, time = get_gps_time(port)
 
-    if ntp_not_synced:
-        update_system_time(date, time)
+            if time_synchronised_by_ntp():
+                return "ntp"
 
-    port.close()
+            if time is not None:
+                update_system_time(date, time)
+                return "gps"
+
+        return None
+    finally:
+        port.close()
 
 class MSG_NAV_TIMEUTC:
     msg_start = [0xb5, 0x62, 0x01, 0x21, 0x14, 0x00]
