@@ -9,14 +9,15 @@ import logging
 import json
 import time
 import os
+import shutil
 import signal
 import sys
 
 import reach_tools
 import gps_time
 
-from flask import Flask, render_template, send_file
-from flask_socketio import SocketIO
+from flask import Flask, render_template, send_from_directory, jsonify
+from flask_socketio import SocketIO, emit
 
 # RTKLIB
 RTKLIB_PATH = "/home/pi/RTKLIB"
@@ -51,6 +52,7 @@ semaphore = Semaphore()
 rtk = RtkController(RTKLIB_PATH)
 server_not_interrupted = False
 time_is_synchronized = False
+time_sync_in_progress = False
 wifi_is_enabled = True
 proc = None
 
@@ -172,8 +174,10 @@ def start():
 			green_led.on()
 		else:
 			stopRover()
+			socketio.emit("state", False, namespace=SOCKET_NAMESPACE)
 	else:
 		orange_led.on()
+		socketio.emit("state", False, namespace=SOCKET_NAMESPACE)
 
 def stop():
 	stopRover()
@@ -201,9 +205,16 @@ def str2str():
 def sync():
 	if time_is_synchronized == True:
 		sendMessage("Time is synced")
+		socketio.emit("timesync", True, namespace=SOCKET_NAMESPACE)
 		return
 
+	global time_sync_in_progress
+	if time_sync_in_progress:
+		return
+	time_sync_in_progress = True
+
 	blue_led.blink()
+	socketio.emit("timesync", "pending", namespace=SOCKET_NAMESPACE)
 
 	time_thread = Thread(target = setCorrectTime)
 	time_thread.start()
@@ -212,6 +223,8 @@ def sync():
 		time.sleep(5)
 
 	sendMessage("Time is synced")
+	time_sync_in_progress = False
+	socketio.emit("timesync", True, namespace=SOCKET_NAMESPACE)
 
 	blue_led.on()
 
@@ -222,25 +235,39 @@ def turnOffLeds():
 
 @app.route("/")
 def index():
-	files = [x for x in os.listdir(LOG_PATH) if os.path.isfile(os.path.join(LOG_PATH, x))]
-	files = sorted(files, key = lambda x: os.path.getmtime(os.path.join(LOG_PATH, x)))
-	return render_template("index.html", files=files)
+	return render_template("index.html", hostname=os.uname().nodename)
 
-@app.route("/download/<file>")
+@app.route("/api/files")
+def listFiles():
+	files = []
+	for name in os.listdir(LOG_PATH):
+		path = os.path.join(LOG_PATH, name)
+		if os.path.isfile(path):
+			st = os.stat(path)
+			files.append({"name": name, "size": st.st_size, "mtime": st.st_mtime})
+	files.sort(key = lambda f: f["mtime"], reverse = True)
+	disk = shutil.disk_usage(LOG_PATH)
+	return jsonify(files=files, disk={"free": disk.free, "total": disk.total})
+
+@app.route("/download/<path:file>")
 def getPath(file):
-	return send_file(os.path.join(LOG_PATH, file), as_attachment=True)
+	# send_from_directory refuses paths that escape LOG_PATH
+	return send_from_directory(LOG_PATH, file, as_attachment=True)
 
 @socketio.on('connect', namespace=SOCKET_NAMESPACE)
 def handleConnect():
-	socketio.emit("state", server_not_interrupted, namespace=SOCKET_NAMESPACE)
+	# send the current state only to the client that just connected
+	emit("state", server_not_interrupted)
+	emit("str2str", proc is not None)
+	emit("timesync", "pending" if time_sync_in_progress else time_is_synchronized)
 
 @socketio.on('disconnect', namespace=SOCKET_NAMESPACE)
 def handleDisconnect():
 	print("Disconnected")
 
 @socketio.on('str2str', namespace=SOCKET_NAMESPACE)
-def handleSync():
-        str2str()
+def handleStr2str():
+	str2str()
 
 @socketio.on('sync', namespace=SOCKET_NAMESPACE)
 def handleSync():
@@ -270,8 +297,8 @@ def handleCpu():
 	socketio.emit("cpu", cpu.temperature, namespace=SOCKET_NAMESPACE)
 
 @socketio.on('load', namespace=SOCKET_NAMESPACE)
-def handleCpu():
-        socketio.emit("load", la.load_average*100, namespace=SOCKET_NAMESPACE)
+def handleLoad():
+	socketio.emit("load", la.load_average*100, namespace=SOCKET_NAMESPACE)
 
 def handleWifi():
 	global wifi_is_enabled

@@ -3,53 +3,136 @@
 
 <head>
 	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-	<link rel="stylesheet" href="{{ url_for('static', filename='font-awesome.min.css') }}" crossorigin="anonymous">
-	<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}" crossorigin="anonymous">
-	<title>Control Panel</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="dark light">
+	<meta name="theme-color" content="#0f1216">
+	<title>{{ hostname }} · GNSS Logger</title>
+	<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
-<body class="bg-dark">
-	<div class="container bg-light">
-                <div class="row mt-1">
-                        <div class="col-sm-3 p-2 text-center bg-primary text-white">CPU Temperature:</div>
-                        <div id="cpu" class="col-sm-3 p-2 text-center bg-info text-white">---</div>
-                        <div class="col-sm-3 p-2 text-center bg-primary text-white">Average Load:</div>
-                        <div id="load" class="col-sm-3 p-2 text-center bg-info text-white">---</div>
-                </div>
-		<div class="row">
-			<div class="col-sm m-1 btn-group" role="group">
-				<button id="str2str" type="button" class="btn btn-primary" data-toggle="tooltip" data-placement="bottom" title="str2str"><i class="fa fa-file"></i></button>
-				<button id="sync" type="button" class="btn btn-info" data-toggle="tooltip" data-placement="bottom" title="Sync Time" ><i class="fa fa-clock-o"></i></button>
-				<button id="start" type="button" class="btn btn-success" data-toggle="tooltip" data-placement="bottom" title="Start Rover"><i class="fa fa-play"></i></button>
-				<button id="stop" type="button" class="btn btn-danger" data-toggle="tooltip" data-placement="bottom" title="Stop Rover"><i class="fa fa-stop"></i></button>
-				<button id="restart" type="button" class="btn btn-danger" data-toggle="tooltip" data-placement="bottom" title="Restart Rover"><i class="fa fa-refresh"></i></button>
-				<button id="shutdown" type="button" class="btn btn-danger" data-toggle="tooltip" data-placement="bottom" title="Shutdown Device"><i class="fa fa-power-off"></i></button>
-			</div>
-		</div>
-		<div class="row mt-1">
-			<div class="col-sm m-1 p-2 text-center bg-primary text-white">Messages</div>
-			<div class="col-sm m-1 p-2 text-center bg-primary text-white">Logs</div>
-		</div>
-		<div class="row">
-			<div id="output" class="bg-light text-dark col-sm m-1 p-2 overflow-auto" style="height: 400px;"></div>
-			<div id="files" class="bg-light text-dark col-sm m-1 p-2 overflow-auto" style="height: 400px;">
-				<ul>
-					{% for path in files %}
-					<li>
-						<a href="{{ url_for('getPath', file=path) }}">{{ path }}</a>
-					</li>
-					{% endfor %}
-				</ul>
-			</div>
-		</div>
-    </div>
+<body>
+	<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+		<defs>
+			<symbol id="i-logo" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></symbol>
+			<symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
+			<symbol id="i-stop" viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="2"/></symbol>
+			<symbol id="i-restart" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1L20.5 8.5"/><path d="M20.5 3.5v5h-5"/></symbol>
+			<symbol id="i-record" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></symbol>
+			<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+			<symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M17.7 6.8a8 8 0 1 1-11.4 0"/></symbol>
+			<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M5 20h14"/></symbol>
+			<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1L20.5 8.5"/><path d="M20.5 3.5v5h-5"/></symbol>
+			<symbol id="i-clear" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4.5h6V7"/><path d="M6.5 7l1 13h9l1-13"/></symbol>
+		</defs>
+	</svg>
 
-    <script src="{{ url_for('static', filename='jquery.min.js') }}" crossorigin="anonymous"></script>
-    <script src="{{ url_for('static', filename='popper.min.js') }}" crossorigin="anonymous"></script>
-    <script src="{{ url_for('static', filename='bootstrap.min.js') }}" crossorigin="anonymous"></script>
-    <script src="{{ url_for('static', filename='socket.io.js') }}" crossorigin="anonymous"></script>
-    <script src="{{ url_for('static', filename='main.js') }}" crossorigin="anonymous"></script>
+	<header class="topbar">
+		<div class="brand">
+			<svg class="icon logo"><use href="#i-logo"/></svg>
+			<div>
+				<div class="brand-name">GNSS Logger</div>
+				<div class="brand-host">{{ hostname }}</div>
+			</div>
+		</div>
+		<div id="conn" class="pill" data-tone="muted"><span class="dot"></span><span class="label">Connecting…</span></div>
+	</header>
+
+	<main class="wrap">
+		<section class="tiles" aria-label="Status">
+			<div class="tile" id="t-rover" data-tone="muted">
+				<div class="tile-label">Rover</div>
+				<div class="tile-value">—</div>
+			</div>
+			<div class="tile" id="t-raw" data-tone="muted">
+				<div class="tile-label">Raw logging</div>
+				<div class="tile-value">—</div>
+			</div>
+			<div class="tile" id="t-time" data-tone="muted">
+				<div class="tile-label">GPS time</div>
+				<div class="tile-value">—</div>
+			</div>
+			<div class="tile" id="t-cpu" data-tone="muted">
+				<div class="tile-label">CPU temp</div>
+				<div class="tile-value">—</div>
+			</div>
+			<div class="tile" id="t-load" data-tone="muted">
+				<div class="tile-label">Load</div>
+				<div class="tile-value">—</div>
+				<div class="meter"><span></span></div>
+			</div>
+			<div class="tile" id="t-disk" data-tone="muted">
+				<div class="tile-label">Free storage</div>
+				<div class="tile-value">—</div>
+				<div class="meter"><span></span></div>
+			</div>
+		</section>
+
+		<section class="actions" aria-label="Controls">
+			<button class="action" id="start" data-tone="ok" disabled>
+				<svg class="icon"><use href="#i-play"/></svg>
+				<span class="action-label">Start rover</span>
+			</button>
+			<button class="action" id="stop" data-tone="warn" disabled>
+				<svg class="icon"><use href="#i-stop"/></svg>
+				<span class="action-label">Stop rover</span>
+			</button>
+			<button class="action" id="restart" data-tone="accent" disabled>
+				<svg class="icon"><use href="#i-restart"/></svg>
+				<span class="action-label">Restart</span>
+			</button>
+			<button class="action" id="str2str" data-tone="accent" disabled>
+				<svg class="icon"><use href="#i-record"/></svg>
+				<span class="action-label">Record raw</span>
+			</button>
+			<button class="action" id="sync" data-tone="accent" disabled>
+				<svg class="icon"><use href="#i-clock"/></svg>
+				<span class="action-label">Sync time</span>
+			</button>
+			<button class="action" id="shutdown" data-tone="err" disabled>
+				<svg class="icon"><use href="#i-power"/></svg>
+				<span class="action-label">Shut down</span>
+			</button>
+		</section>
+
+		<section class="panels">
+			<div class="panel">
+				<div class="panel-head">
+					<h2>Messages</h2>
+					<button class="icon-btn" id="clear-log" title="Clear messages" aria-label="Clear messages">
+						<svg class="icon"><use href="#i-clear"/></svg>
+					</button>
+				</div>
+				<div id="output" class="console" role="log" aria-live="polite"></div>
+			</div>
+
+			<div class="panel">
+				<div class="panel-head">
+					<h2>Logs <span id="files-summary" class="muted"></span></h2>
+					<button class="icon-btn" id="refresh-files" title="Refresh list" aria-label="Refresh list">
+						<svg class="icon"><use href="#i-refresh"/></svg>
+					</button>
+				</div>
+				<div class="files-scroll">
+					<ul id="files" class="files"></ul>
+					<div id="files-empty" class="empty" hidden>No log files yet</div>
+				</div>
+			</div>
+		</section>
+	</main>
+
+	<dialog id="confirm-shutdown" class="dialog">
+		<form method="dialog">
+			<h3>Shut down the device?</h3>
+			<p>The rover will stop and this panel will go offline. To turn the device on again you'll have to power-cycle it.</p>
+			<div class="dialog-actions">
+				<button value="cancel" class="btn">Cancel</button>
+				<button value="ok" class="btn btn-danger">Shut down</button>
+			</div>
+		</form>
+	</dialog>
+
+	<script src="{{ url_for('static', filename='socket.io.js') }}"></script>
+	<script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 
 </html>

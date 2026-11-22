@@ -7,8 +7,10 @@
 * Raw Data Logging
 * GPS Time Synchronization
 * Start/Stop/Restart Rover
-* Device Shutdown
-* File List/Download
+* Device Shutdown (with confirmation)
+* File List/Download with size, date and free storage
+* Live status: rover, raw logging, GPS time sync, CPU temperature and load
+* Mobile-friendly UI with light/dark theme, works fully offline
 
 ## Installation
 
