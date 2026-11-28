@@ -33,7 +33,7 @@ A small, self-contained GNSS logger and RTK rover built on a **Raspberry Pi Zero
   - time sync state;
   - CPU temperature and load;
   - free storage.
-- **File list and download.** Lists the log files with size and date, newest first, and refreshes it automatically.
+- **File list, download and delete.** Lists the log files with size and date, newest first, and refreshes it automatically. Delete one file or all of them; files still being written are protected.
 - **Status LEDs** on GPIO, so you can see the state without opening the panel.
 - **OLED status display** (optional SSD1306 on I2C) showing the IP address, rover, recording and time sync state, CPU temperature and free storage.
 - **Mobile-friendly panel** with a light and dark theme. All assets are served locally, so it works without internet.
@@ -326,6 +326,8 @@ Typical field workflow:
 4. Stop it, download the files and press **Shut down** before you cut the power.
 
 The **Messages** panel shows what the server is doing, with timestamps. The **Logs** panel lists every file in `/home/pi/log`, newest first. Each server start also creates a `<time>.log` file there, containing the web server's request log.
+
+To free space, click the trash icon next to a file, or the trash icon in the **Logs** header to delete all files. Both ask for confirmation. Files that a process has open can't be deleted and are marked **REC** or **IN USE**: the running recording, the rover's logs while it runs, and the server's current `.log` file.
 
 ## Downloading and processing data
 

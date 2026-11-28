@@ -12,6 +12,7 @@ import time
 import os
 import shutil
 import signal
+import stat
 import sys
 
 import reach_tools
@@ -440,17 +441,85 @@ def turnOffLeds():
 def index():
 	return render_template("index.html", hostname=os.uname().nodename)
 
+def logFiles():
+	"""Regular files directly in LOG_PATH, as {name: os.stat_result}."""
+	files = {}
+	for name in os.listdir(LOG_PATH):
+		try:
+			st = os.lstat(os.path.join(LOG_PATH, name))
+		except OSError:
+			continue
+		if stat.S_ISREG(st.st_mode):
+			files[name] = st
+	return files
+
+def filesInUse():
+	"""Names of files in LOG_PATH that some process has open: the running
+	recording, rtkrcv's logs while the rover runs, this server's own log."""
+	base = os.path.realpath(LOG_PATH)
+	used = set()
+	for fd_dir in glob.glob("/proc/[0-9]*/fd"):
+		try:
+			fds = os.listdir(fd_dir)
+		except OSError:
+			continue  # process exited, or not ours to look at
+		for fd in fds:
+			try:
+				target = os.readlink(os.path.join(fd_dir, fd))
+			except OSError:
+				continue
+			if os.path.dirname(target) == base:
+				used.add(os.path.basename(target))
+	return used
+
+def filesChanged():
+	socketio.emit("files", namespace=SOCKET_NAMESPACE)  # other panels reload their list
+
 @app.route("/api/files")
 def listFiles():
-	files = []
-	for name in os.listdir(LOG_PATH):
-		path = os.path.join(LOG_PATH, name)
-		if os.path.isfile(path):
-			st = os.stat(path)
-			files.append({"name": name, "size": st.st_size, "mtime": st.st_mtime})
+	used = filesInUse()
+	files = [{"name": name, "size": st.st_size, "mtime": st.st_mtime, "in_use": name in used}
+		for name, st in logFiles().items()]
 	files.sort(key = lambda f: f["mtime"], reverse = True)
 	disk = shutil.disk_usage(LOG_PATH)
 	return jsonify(files=files, disk={"free": disk.free, "total": disk.total})
+
+@app.route("/api/files/<path:name>", methods=["DELETE"])
+def deleteFile(name):
+	if name not in logFiles():   # also refuses "../x", subfolders and symlinks
+		return jsonify(error="No such log file: %s" % name), 404
+	if name in filesInUse():
+		return jsonify(error="%s is in use and can't be deleted" % name), 409
+	try:
+		os.remove(os.path.join(LOG_PATH, name))
+	except OSError as e:
+		return jsonify(error="Could not delete %s: %s" % (name, e.strerror)), 500
+
+	sendMessage("Deleted %s" % name)
+	filesChanged()
+	return jsonify(deleted=[name])
+
+@app.route("/api/files", methods=["DELETE"])
+def deleteAllFiles():
+	used = filesInUse()
+	deleted, kept, freed = [], [], 0
+	for name, st in logFiles().items():
+		if name in used:
+			kept.append(name)
+			continue
+		try:
+			os.remove(os.path.join(LOG_PATH, name))
+			deleted.append(name)
+			freed += st.st_size
+		except OSError:
+			kept.append(name)
+
+	msg = "Deleted %d log files (%.1f MB)" % (len(deleted), freed / 1e6)
+	if kept:
+		msg += ", kept %d: %s" % (len(kept), ", ".join(sorted(kept)))
+	sendMessage(msg)
+	filesChanged()
+	return jsonify(deleted=deleted, kept=kept)
 
 @app.route("/download/<path:file>")
 def getPath(file):

@@ -24,6 +24,7 @@
 			<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1L20.5 8.5"/><path d="M20.5 3.5v5h-5"/></symbol>
 			<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
 			<symbol id="i-clear" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4.5h6V7"/><path d="M6.5 7l1 13h9l1-13"/></symbol>
+			<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4.5h6V7"/><path d="M6.5 7l1 13h9l1-13"/><path d="M10 11v5.5M14 11v5.5"/></symbol>
 		</defs>
 	</svg>
 
@@ -120,9 +121,14 @@
 			<div class="panel">
 				<div class="panel-head">
 					<h2>Logs <span id="files-summary" class="muted"></span></h2>
-					<button class="icon-btn" id="refresh-files" title="Refresh list" aria-label="Refresh list">
-						<svg class="icon"><use href="#i-refresh"/></svg>
-					</button>
+					<div class="head-actions">
+						<button class="icon-btn icon-btn-danger" id="delete-all" title="Delete all logs" aria-label="Delete all logs" disabled>
+							<svg class="icon"><use href="#i-trash"/></svg>
+						</button>
+						<button class="icon-btn" id="refresh-files" title="Refresh list" aria-label="Refresh list">
+							<svg class="icon"><use href="#i-refresh"/></svg>
+						</button>
+					</div>
 				</div>
 				<div class="files-scroll">
 					<ul id="files" class="files"></ul>
@@ -139,6 +145,17 @@
 			<div class="dialog-actions">
 				<button value="cancel" class="btn">Cancel</button>
 				<button value="ok" class="btn btn-danger">Shut down</button>
+			</div>
+		</form>
+	</dialog>
+
+	<dialog id="confirm-delete" class="dialog">
+		<form method="dialog">
+			<h3 id="confirm-delete-title">Delete?</h3>
+			<p id="confirm-delete-text"></p>
+			<div class="dialog-actions">
+				<button value="cancel" class="btn">Cancel</button>
+				<button value="ok" class="btn btn-danger" id="confirm-delete-ok">Delete</button>
 			</div>
 		</form>
 	</dialog>

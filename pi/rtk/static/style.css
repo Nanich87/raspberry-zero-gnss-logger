@@ -268,7 +268,8 @@ body {
 .action:focus-visible,
 .icon-btn:focus-visible,
 .btn:focus-visible,
-.file-dl:focus-visible {
+.file-dl:focus-visible,
+.file-del:focus-visible {
 	outline: 2px solid var(--accent);
 	outline-offset: 2px;
 }
@@ -339,7 +340,11 @@ body {
 	cursor: pointer;
 }
 
-.icon-btn:hover { color: var(--text); background: var(--surface-2); }
+.icon-btn:hover:not(:disabled) { color: var(--text); background: var(--surface-2); }
+.icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+.icon-btn-danger:hover:not(:disabled) { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+
+.head-actions { display: flex; gap: 2px; }
 .icon-btn .icon { width: 18px; height: 18px; }
 .icon-btn.is-busy .icon { animation: spin .8s linear infinite; }
 
@@ -376,9 +381,9 @@ body {
 
 .file {
 	display: grid;
-	grid-template-columns: 1fr auto auto;
+	grid-template-columns: 1fr auto auto auto;
 	align-items: center;
-	gap: 12px;
+	gap: 8px;
 	padding: 7px 8px 7px 16px;
 	border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }
@@ -428,6 +433,24 @@ body {
 
 .file-dl:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .file-dl .icon { width: 18px; height: 18px; }
+
+.file-del {
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	padding: 0;
+	color: var(--muted);
+	background: transparent;
+	border: 0;
+	border-radius: 8px;
+	cursor: pointer;
+}
+
+.file-del:hover:not(:disabled) { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+.file-del:disabled { opacity: .3; cursor: not-allowed; }
+.file-del .icon { width: 18px; height: 18px; }
+.file.is-deleting { opacity: .45; }
 
 .empty {
 	padding: 40px 16px;

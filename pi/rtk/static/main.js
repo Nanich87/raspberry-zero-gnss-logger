@@ -143,10 +143,13 @@
     // ---------- files ----------
 
     var filesLoading = false;
+    var filesReloadPending = false;   // asked again while loading: reload once done
+    var deletable = { count: 0, size: 0 };   // files "Delete all" would remove
 
     function loadFiles() {
-        if (filesLoading) return;
+        if (filesLoading) { filesReloadPending = true; return; }
         filesLoading = true;
+        filesReloadPending = false;
         $("refresh-files").classList.add("is-busy");
 
         fetch("/api/files", { cache: "no-store" })
@@ -159,6 +162,7 @@
             .then(function () {
                 filesLoading = false;
                 $("refresh-files").classList.remove("is-busy");
+                if (filesReloadPending) loadFiles();
             });
     }
 
@@ -168,8 +172,10 @@
         list.textContent = "";
 
         var total = 0;
-        files.forEach(function (f, i) {
+        deletable = { count: 0, size: 0 };
+        files.forEach(function (f) {
             total += f.size;
+            if (!f.in_use) { deletable.count++; deletable.size += f.size; }
 
             var li = document.createElement("li");
             li.className = "file";
@@ -181,11 +187,13 @@
             name.className = "file-name";
             name.textContent = f.name;
             name.title = f.name;
-            if (i === 0 && state.logging && /\.ubx$/i.test(f.name)) {
+            if (f.in_use) {
+                var rec = state.logging && /\.ubx$/i.test(f.name);
                 var badge = document.createElement("span");
                 badge.className = "badge";
-                badge.setAttribute("data-tone", "err");
-                badge.textContent = "REC";
+                badge.setAttribute("data-tone", rec ? "err" : "muted");
+                badge.textContent = rec ? "REC" : "IN USE";
+                badge.title = "Open by a running process, so it can't be deleted";
                 name.appendChild(badge);
             }
 
@@ -208,12 +216,30 @@
             dl.setAttribute("download", "");
             dl.innerHTML = '<svg class="icon"><use href="#i-download"/></svg>';
 
+            var del = document.createElement("button");
+            del.className = "file-del";
+            del.disabled = f.in_use;
+            del.title = f.in_use ? "In use, can't be deleted" : "Delete " + f.name;
+            del.setAttribute("aria-label", "Delete " + f.name);
+            del.innerHTML = '<svg class="icon"><use href="#i-trash"/></svg>';
+            del.addEventListener("click", function () {
+                confirmDelete("Delete " + f.name + "?",
+                    formatBytes(f.size) + ", " + formatDate(new Date(f.mtime * 1000)) + ". This can't be undone.",
+                    "Delete",
+                    function () {
+                        li.classList.add("is-deleting");
+                        deleteFiles("/api/files/" + encodeURIComponent(f.name));
+                    });
+            });
+
             li.appendChild(main);
             li.appendChild(size);
             li.appendChild(dl);
+            li.appendChild(del);
             list.appendChild(li);
         });
 
+        $("delete-all").disabled = deletable.count === 0;
         $("files-empty").hidden = files.length > 0;
         $("files-summary").textContent = files.length
             ? "· " + files.length + " files, " + formatBytes(total)
@@ -226,6 +252,51 @@
             $("t-disk").title = formatBytes(data.disk.free) + " free of " + formatBytes(data.disk.total);
         }
     }
+
+    // ---------- deleting ----------
+
+    var deleteDialog = $("confirm-delete");
+    var onDeleteConfirmed = null;
+
+    function confirmDelete(title, text, okLabel, onOk) {
+        if (typeof deleteDialog.showModal !== "function") {
+            if (window.confirm(title + "\n\n" + text)) onOk();
+            return;
+        }
+        $("confirm-delete-title").textContent = title;
+        $("confirm-delete-text").textContent = text;
+        $("confirm-delete-ok").textContent = okLabel;
+        onDeleteConfirmed = onOk;
+        deleteDialog.returnValue = "";
+        deleteDialog.showModal();
+    }
+
+    deleteDialog.addEventListener("close", function () {
+        var fn = onDeleteConfirmed;
+        onDeleteConfirmed = null;
+        if (deleteDialog.returnValue === "ok" && fn) fn();
+    });
+
+    function deleteFiles(url) {
+        fetch(url, { method: "DELETE" })
+            .then(function (r) {
+                return r.json().catch(function () { return {}; }).then(function (data) {
+                    // success is reported by the server in Messages, to every panel
+                    if (!r.ok) log(data.error || "Delete failed: HTTP " + r.status, "err");
+                });
+            })
+            .catch(function (e) { log("Delete failed: " + e.message, "err"); })
+            .then(loadFiles);
+    }
+
+    $("delete-all").addEventListener("click", function () {
+        var n = deletable.count;
+        confirmDelete("Delete all log files?",
+            n + (n === 1 ? " file, " : " files, ") + formatBytes(deletable.size) +
+            ". Files in use (the running recording, the rover's logs, the server's current log) are kept. This can't be undone.",
+            "Delete " + n + (n === 1 ? " file" : " files"),
+            function () { deleteFiles("/api/files"); });
+    });
 
     // ---------- socket ----------
 
@@ -302,6 +373,8 @@
         sel.value = state.profile;
         render();
     });
+
+    socket.on("files", function () { loadFiles(); });
 
     socket.on("message", function (message) {
         log(String(message));
