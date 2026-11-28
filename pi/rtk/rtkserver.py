@@ -16,6 +16,7 @@ import sys
 
 import reach_tools
 import gps_time
+from display import StatusDisplay
 
 from flask import Flask, render_template, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit
@@ -29,6 +30,7 @@ CONFIG_DIR = "/home/pi"
 PROFILE_PATTERN = "*_navi.conf"
 PROFILE_NAMES = {
 	"6m_navi.conf": "u-blox NEO-6M",
+	"m8t_navi.conf": "u-blox NEO-M8T",
 	"f9p_navi.conf": "u-blox ZED-F9P",
 }
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
@@ -48,6 +50,14 @@ BLUE_LED_PIN_NUMBER = 6
 GREEN_LED_PIN_NUMBER = 5
 ORANGE_LED_PIN_NUMBER = 13
 
+# OLED status display (SSD1306 on I2C). Set DISPLAY_ENABLED = False if you have none.
+DISPLAY_ENABLED = True
+DISPLAY_I2C_BUS = 1
+DISPLAY_I2C_ADDRESS = 0x3C
+DISPLAY_HEIGHT = 32        # 32 or 64
+DISPLAY_REFRESH = 2        # seconds between updates
+DISPLAY_RETRY = 30         # seconds between attempts to find a missing display
+
 # SocketIO
 SOCKET_HOST = "0.0.0.0"
 SOCKET_PORT = 80
@@ -61,6 +71,16 @@ app.rejectUnauthorized = False
 app.debug = False
 
 socketio = SocketIO(app)
+
+@app.url_defaults
+def versionStatic(endpoint, values):
+	"""Add ?v=<mtime> to static URLs, so browsers fetch a file again after it
+	changes instead of using a cached copy (older versions sent max-age=12h)."""
+	if endpoint == "static" and "filename" in values:
+		try:
+			values["v"] = int(os.stat(os.path.join(app.static_folder, values["filename"])).st_mtime)
+		except OSError:
+			pass
 
 # RtkController
 semaphore = Semaphore()
@@ -76,6 +96,10 @@ current_profile = os.path.basename(CONFIG_NAME)
 # CPU
 cpu = CPUTemperature()
 la = LoadAverage(min_load_average=0, max_load_average=2)
+
+# Display
+display = StatusDisplay(DISPLAY_I2C_BUS, DISPLAY_I2C_ADDRESS, height=DISPLAY_HEIGHT)
+display_stopped = False
 
 def listProfiles():
 	files = sorted(os.path.basename(f) for f in glob.glob(os.path.join(CONFIG_DIR, PROFILE_PATTERN)))
@@ -310,6 +334,73 @@ def sync():
 	# don't block the Socket.IO handler; setCorrectTime reports the result
 	socketio.start_background_task(setCorrectTime)
 
+def getIp():
+	try:
+		ips = check_output(["hostname", "-I"], timeout=5).decode().split()
+	except (OSError, subprocess.SubprocessError):
+		ips = []
+	return ips[0] if ips else "no network"
+
+def displayLines():
+	if server_not_interrupted:
+		rover = "RUN"
+	elif orange_led.is_lit:
+		rover = "ERR"
+	else:
+		rover = "off"
+
+	if time_sync_in_progress:
+		synced = "..."
+	elif time_is_synchronized:
+		synced = "OK"
+	else:
+		synced = "--"
+
+	profile = current_profile.replace("_navi.conf", "")
+	free_gb = shutil.disk_usage(LOG_PATH).free / 1e9
+
+	return [
+		"IP " + getIp(),
+		"Rover %-4s Prof %s" % (rover, profile),
+		"Rec %-4s  Time %s" % ("ON" if proc is not None else "off", synced),
+		"%.0fC  Free %.1fGB" % (cpu.temperature, free_gb),
+	]
+
+def displayLoop():
+	"""Refresh the OLED in the background; retry now and then if it is missing."""
+	reported = ""   # differs from any real state, so the first one is reported
+	next_try = 0
+	while not display_stopped:
+		if not display.available and time.time() >= next_try:
+			display.begin()
+			next_try = time.time() + DISPLAY_RETRY
+		if display.available:
+			try:
+				lines = displayLines()
+			except Exception as e:
+				lines = ["Display error", str(e)]
+			with display.lock:   # don't overwrite the shutdown message
+				if not display_stopped:
+					display.show(lines)
+
+		if display.error != reported:
+			reported = display.error
+			if reported:
+				sendMessage(reported)
+			elif display.available:
+				sendMessage("Status display connected")
+
+		socketio.sleep(DISPLAY_REFRESH)
+
+def stopDisplay(lines = None):
+	global display_stopped
+	with display.lock:
+		display_stopped = True
+		if lines:
+			display.show(lines)
+		else:
+			display.off()
+
 def turnOffLeds():
         blue_led.off()
         green_led.off()
@@ -392,6 +483,7 @@ def handleRestart():
 @socketio.on('shutdown', namespace=SOCKET_NAMESPACE)
 def handleShutdown():
 	turnOffLeds()
+	stopDisplay(["Shutting down...", "", "Wait 20 s, then", "unplug the power"])
 	os.system("sudo shutdown -h now")
 
 @socketio.on('cpu', namespace=SOCKET_NAMESPACE)
@@ -419,6 +511,9 @@ if __name__ == "__main__":
 	blue_led = LED(BLUE_LED_PIN_NUMBER)
 	orange_led = LED(ORANGE_LED_PIN_NUMBER)
 
+	if DISPLAY_ENABLED:
+		socketio.start_background_task(displayLoop)
+
 	try:
 		# no reloader: it would run __main__ twice and claim the GPIO pins twice
 		socketio.run(app, host = SOCKET_HOST, port = SOCKET_PORT,
@@ -427,3 +522,5 @@ if __name__ == "__main__":
 		print("Server interrupted by user!")
 	finally:
 		stop()
+		if not display_stopped:
+			stopDisplay()

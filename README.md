@@ -35,6 +35,7 @@ A small, self-contained GNSS logger and RTK rover built on a **Raspberry Pi Zero
   - free storage.
 - **File list and download.** Lists the log files with size and date, newest first, and refreshes it automatically.
 - **Status LEDs** on GPIO, so you can see the state without opening the panel.
+- **OLED status display** (optional SSD1306 on I2C) showing the IP address, rover, recording and time sync state, CPU temperature and free storage.
 - **Mobile-friendly panel** with a light and dark theme. All assets are served locally, so it works without internet.
 
 ## Hardware
@@ -45,6 +46,7 @@ A small, self-contained GNSS logger and RTK rover built on a **Raspberry Pi Zero
 | u-blox NEO-6M **or** ZED-F9P | Connected to the Pi's UART (`/dev/serial0`) |
 | GNSS antenna | Use a multi-band antenna for the ZED-F9P |
 | 3 LEDs and resistors (optional) | Status indication |
+| SSD1306 OLED, 128×32 or 128×64, I2C (optional) | Status display |
 | microSD card, power bank | |
 
 ### Wiring
@@ -61,6 +63,24 @@ A small, self-contained GNSS logger and RTK rover built on a **Raspberry Pi Zero
 | Green | GPIO5 | 29 | Rover is running |
 | Blue | GPIO6 | 31 | Blinking: time sync in progress. Steady: time synced |
 | Orange | GPIO13 | 33 | Rover failed to start |
+
+| OLED display | Raspberry Pi |
+|---|---|
+| SDA | GPIO2 / SDA (pin 3) |
+| SCL | GPIO3 / SCL (pin 5) |
+| VCC | 3.3 V (pin 1) |
+| GND | GND (pin 9) |
+
+The display shows, refreshed every 2 seconds:
+
+```
+IP 192.168.1.122
+Rover RUN  Prof f9p
+Rec ON    Time OK
+52C  Free 16.9GB
+```
+
+`Rover` is `RUN`, `off`, or `ERR` when the rover failed to start. `Time` is `OK`, `...` while syncing, or `--` when not synced. When you shut the device down from the panel, the display says so.
 
 > The receiver's UART must be set to **115200 baud**. The NEO-6M ships at 9600 and the ZED-F9P at 38400. Change the rate with u-center and save it to the receiver's flash or battery-backed RAM.
 
@@ -136,6 +156,15 @@ sudo pip3 install --break-system-packages simple-websocket
 ```
 
 `simple-websocket` is optional. Without it the panel still works, but over HTTP long-polling instead of WebSocket.
+
+For the OLED display, enable I2C (`sudo raspi-config` → Interface Options → I2C) and install:
+
+```sh
+sudo apt install python3-pil python3-smbus i2c-tools
+sudo i2cdetect -y 1    # the display should show up at 3c
+```
+
+Without these packages, or without a display, the server runs normally and reports in the **Messages** panel that the display is disabled.
 
 On any other system, use pip with [`pi/rtk/requirements.txt`](pi/rtk/requirements.txt). The panel bundles the Socket.IO v4 client, which needs **Flask-SocketIO 5.3 or newer**.
 
@@ -239,6 +268,9 @@ Other settings at the top of `pi/rtk/rtkserver.py`:
 | `SERIAL_PORT_BAUD_RATE` | `115200` |
 | `SOCKET_PORT` | `80` |
 | LED pins | GPIO5, GPIO6, GPIO13 |
+| `DISPLAY_ENABLED` | `True`: set to `False` if you have no OLED display |
+| `DISPLAY_I2C_ADDRESS` | `0x3C`: some displays use `0x3D` |
+| `DISPLAY_HEIGHT` | `32`: set to `64` for a 128×64 display |
 
 ### Receiver profiles
 
@@ -319,6 +351,7 @@ Process the RINEX files with `rnx2rtkp` or RTKPOST, using base station or CORS d
 │   │   ├── rtkserver.py        Flask + Socket.IO server, GPIO, str2str/rtkrcv control
 │   │   ├── RtkController.py    Drives the rtkrcv console through pexpect
 │   │   ├── gps_time.py         Sets the system clock from UBX NAV-TIMEUTC
+│   │   ├── display.py          SSD1306 OLED status display over I2C
 │   │   ├── reach_tools.py      Helpers
 │   │   ├── index.html          Control panel page
 │   │   ├── static/             CSS, JS, bundled Socket.IO client
@@ -355,6 +388,12 @@ Process the RINEX files with `rnx2rtkp` or RTKPOST, using base station or CORS d
 - Test the port directly: `sudo cat /dev/serial0 | xxd | head`.
 
 **"Time sync failed: no valid GPS time".** The receiver did not report a valid UTC time within 15 minutes (`TIME_SYNC_TIMEOUT`). After a cold start it needs a fix and the leap-second count from the almanac, which can take up to 12.5 minutes. Move the antenna to a place with a clear view of the sky and press **Sync time** again.
+
+**"display not found on I2C bus 1" or a blank display.**
+
+- Check that I2C is enabled and the wiring is right: `sudo i2cdetect -y 1` should show `3c` (or `3d`).
+- If the address is `3d`, set `DISPLAY_I2C_ADDRESS = 0x3D`.
+- The server looks for the display again every 30 seconds, so you can connect it while it runs.
 
 **"Str2Str stopped unexpectedly".** The recording process exited on its own. The text in brackets is its last error, usually the serial port being busy or missing.
 
