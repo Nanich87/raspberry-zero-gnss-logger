@@ -31,7 +31,7 @@ A small, self-contained GNSS logger and RTK rover built on a **Raspberry Pi Zero
 - **Live status:**
   - rover and recording state;
   - time sync state;
-  - CPU temperature and load;
+  - CPU temperature and CPU use;
   - free storage.
 - **File list, download and delete.** Lists the log files with size and date, newest first, and refreshes it automatically. Delete one file or all of them; files still being written are protected.
 - **Status LEDs** on GPIO, so you can see the state without opening the panel.

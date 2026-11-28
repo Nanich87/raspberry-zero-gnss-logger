@@ -104,11 +104,26 @@ current_profile = os.path.basename(CONFIG_NAME)
 # CPU
 cpu = CPUTemperature()
 
-def loadAverage():
-	"""5-minute load average. Read directly: gpiozero's LoadAverage in
-	Debian's 1.6.2 prints a debug line to the log on every read."""
-	with open("/proc/loadavg") as f:
-		return float(f.read().split()[1])
+_cpu = {"idle": 0, "total": 0, "at": 0, "pct": 0.0}
+
+def cpuUsage():
+	"""Share of CPU time in use (all cores) since the previous call, in %.
+
+	Unlike the load average, which counts waiting processes and reads like a
+	percentage when it isn't, this is the real busy time from /proc/stat.
+	Calls less than a second apart (several open panels) reuse the last value."""
+	now = time.time()
+	if now - _cpu["at"] < 1:
+		return _cpu["pct"]
+	with open("/proc/stat") as f:
+		fields = [int(x) for x in f.readline().split()[1:]]
+	idle = fields[3] + fields[4]          # idle + iowait
+	total = sum(fields[:8])               # up to steal; guest is already in user
+	d_total = total - _cpu["total"]
+	if _cpu["at"] and d_total > 0:
+		_cpu["pct"] = 100.0 * (1 - (idle - _cpu["idle"]) / d_total)
+	_cpu.update(idle=idle, total=total, at=now)
+	return _cpu["pct"]
 
 # Rover position
 sol_lock = Lock()
@@ -721,11 +736,11 @@ def handleShutdown():
 
 @socketio.on('cpu', namespace=SOCKET_NAMESPACE)
 def handleCpu():
-	socketio.emit("cpu", cpu.temperature, namespace=SOCKET_NAMESPACE)
+	emit("cpu", cpu.temperature)   # only to the panel that asked
 
 @socketio.on('load', namespace=SOCKET_NAMESPACE)
 def handleLoad():
-	socketio.emit("load", loadAverage()*100, namespace=SOCKET_NAMESPACE)
+	emit("load", cpuUsage())
 
 def handleWifi():
 	global wifi_is_enabled
@@ -743,6 +758,8 @@ if __name__ == "__main__":
 	green_led = LED(GREEN_LED_PIN_NUMBER)
 	blue_led = LED(BLUE_LED_PIN_NUMBER)
 	orange_led = LED(ORANGE_LED_PIN_NUMBER)
+
+	cpuUsage()   # first sample, so the panel's first reading covers a real interval
 
 	if DISPLAY_ENABLED:
 		socketio.start_background_task(displayLoop)
