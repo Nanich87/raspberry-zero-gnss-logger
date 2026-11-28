@@ -3,6 +3,7 @@ from gpiozero import LED, CPUTemperature
 from RtkController import RtkController
 from subprocess import check_output, Popen, PIPE
 from threading import Lock, Semaphore, Thread
+from collections import deque
 
 import subprocess
 import logging
@@ -12,12 +13,14 @@ import time
 import os
 import shutil
 import signal
+import socket
 import stat
 import sys
 
 import reach_tools
 import gps_time
 from display import StatusDisplay
+import solution
 
 from flask import Flask, render_template, send_from_directory, jsonify
 from flask_socketio import SocketIO, emit
@@ -58,6 +61,10 @@ DISPLAY_I2C_ADDRESS = 0x3C
 DISPLAY_HEIGHT = 32        # 32 or 64
 DISPLAY_REFRESH = 1        # seconds between updates (the clock shows seconds)
 DISPLAY_RETRY = 30         # seconds between attempts to find a missing display
+
+# Rover position: read from the profile's tcpsvr output (llh or nmea)
+TRACK_POINTS = 3600        # track kept for the map: 1 h at one point per second
+SOLUTION_STALE = 5         # seconds without a solution before it counts as lost
 
 # SocketIO
 SOCKET_HOST = "0.0.0.0"
@@ -102,6 +109,12 @@ def loadAverage():
 	Debian's 1.6.2 prints a debug line to the log on every read."""
 	with open("/proc/loadavg") as f:
 		return float(f.read().split()[1])
+
+# Rover position
+sol_lock = Lock()
+sol_session = 0            # bumped to stop the reader
+sol_latest = None          # last solution dict, with "rx" = time received
+sol_track = deque(maxlen=TRACK_POINTS)   # [lat, lon, q]
 
 # Display
 display = StatusDisplay(DISPLAY_I2C_BUS, DISPLAY_I2C_ADDRESS, height=DISPLAY_HEIGHT)
@@ -268,6 +281,7 @@ def start():
 		if startResult != -1:
 			socketio.emit("state", True, namespace=SOCKET_NAMESPACE)
 			green_led.on()
+			startSolutionReader()
 		else:
 			stopRover()
 			socketio.emit("state", False, namespace=SOCKET_NAMESPACE)
@@ -276,6 +290,7 @@ def start():
 		socketio.emit("state", False, namespace=SOCKET_NAMESPACE)
 
 def stop():
+	stopSolutionReader()
 	stopRover()
 	shutdownRover()
 
@@ -283,6 +298,97 @@ def stop():
 
 	green_led.off()
 	orange_led.off()
+
+def startSolutionReader():
+	global sol_session
+	try:
+		output = solution.find_output(os.path.join(CONFIG_DIR, current_profile))
+	except OSError as e:
+		output = None
+		sendMessage("Could not read the profile: %s" % e)
+	if output is None:
+		sendMessage("No position on the map: the profile has no TCP server output "
+			"(outstr1/outstr2 type tcpsvr, format llh or nmea)")
+		return
+
+	port, fmt, options = output
+	with sol_lock:
+		sol_session += 1
+		session = sol_session
+	sendMessage("Reading the rover position from port %d (%s)" % (port, fmt))
+	socketio.start_background_task(readSolutions, session, port, fmt, options)
+
+def stopSolutionReader():
+	global sol_session, sol_latest
+	with sol_lock:
+		sol_session += 1
+		sol_latest = None
+	socketio.emit("solution", None, namespace=SOCKET_NAMESPACE)
+
+def solutionPayload(sol):
+	if sol is None:
+		return None
+	return {k: v for k, v in sol.items() if k != "rx"}
+
+def readSolutions(session, port, fmt, options):
+	"""Follow rtkrcv's solution stream while the rover runs; reconnect if it drops.
+
+	Keep one connection open even when no solutions come (no fix yet):
+	rtkrcv's TCP server only notices a closed client when it writes to it,
+	and it serves at most 32, so reconnecting on silence would use them up."""
+	global sol_latest
+	last_point = last_emit = 0
+
+	while sol_session == session:
+		try:
+			conn = socket.create_connection(("127.0.0.1", port), timeout=3)
+		except OSError:
+			socketio.sleep(2)   # rtkrcv opens the port a moment after it starts
+			continue
+
+		conn.settimeout(1)      # only so the session check below runs regularly
+		buf = b""
+		try:
+			while sol_session == session:
+				try:
+					data = conn.recv(4096)
+				except socket.timeout:
+					continue
+				if not data:
+					break       # rtkrcv closed the connection: reconnect
+				buf += data
+				*lines, buf = buf.split(b"\n")
+				if len(buf) > 65536:
+					buf = b""   # not line-based data; don't grow forever
+
+				for raw in lines:
+					sol = solution.parse(raw.decode("ascii", errors="replace"), fmt, options)
+					if sol is None:
+						continue
+
+					now = time.time()
+					sol["rx"] = now
+					with sol_lock:
+						if sol_session != session:
+							break
+						sol_latest = sol
+						if now - last_point >= 1:   # at most one track point per second
+							sol_track.append([round(sol["lat"], 8), round(sol["lon"], 8), sol["q"]])
+							last_point = now
+					if now - last_emit >= 0.5:   # don't flood the panel at high rates
+						socketio.emit("solution", solutionPayload(sol), namespace=SOCKET_NAMESPACE)
+						last_emit = now
+		except OSError:
+			pass   # connection lost: reconnect
+		finally:
+			conn.close()
+
+def currentSolution():
+	"""The last solution, or None if it's older than SOLUTION_STALE."""
+	sol = sol_latest
+	if sol is None or time.time() - sol["rx"] > SOLUTION_STALE:
+		return None
+	return sol
 
 def watchStr2str(p):
 	"""Read str2str's output until it exits; report it if it exits on its own."""
@@ -365,15 +471,33 @@ def clockIsValid():
 			pass
 	return _cached["ntp"]
 
-def displayLines():
-	if server_not_interrupted:
-		rover = "RUN"
-	elif orange_led.is_lit:
-		rover = "ERR"
-	else:
-		rover = "off"
+def formatAccuracy(sol):
+	"""Horizontal 1-sigma from llh, or HDOP from NMEA, in at most 6 characters."""
+	if sol["hacc"] is not None:
+		a = sol["hacc"]
+		if a < 0.1:
+			return "%.3fm" % a
+		if a < 10:
+			return "%.2fm" % a
+		return "%.1fm" % a if a < 100 else ">99m"
+	if sol["hdop"] is not None:
+		return "H%.1f" % sol["hdop"]
+	return ""
 
+def displayLines():
 	profile = current_profile.replace("_navi.conf", "")
+	sol = currentSolution() if server_not_interrupted else None
+
+	if sol is not None:
+		# e.g. "FIX    14sv 0.012m": quality matters more than the profile now
+		line2 = "%-6s %2dsv %s" % (sol["quality"], sol["ns"], formatAccuracy(sol))
+	elif server_not_interrupted:
+		line2 = "Rover RUN  no sol"
+	elif orange_led.is_lit:
+		line2 = "Rover ERR  Prof %s" % profile
+	else:
+		line2 = "Rover off  Prof %s" % profile
+
 	recording = "ON" if proc is not None else "off"
 	free_gb = shutil.disk_usage(LOG_PATH).free / 1e9
 	temp = "%.0fC" % cpu.temperature
@@ -391,7 +515,7 @@ def displayLines():
 
 	return [
 		"IP " + getIp(),
-		"Rover %-4s Prof %s" % (rover, profile),
+		line2,
 		line3,
 		line4,
 	]
@@ -526,6 +650,12 @@ def getPath(file):
 	# send_from_directory refuses paths that escape LOG_PATH
 	return send_from_directory(LOG_PATH, file, as_attachment=True)
 
+@socketio.on('clear_track', namespace=SOCKET_NAMESPACE)
+def handleClearTrack():
+	with sol_lock:
+		sol_track.clear()
+	socketio.emit("track", [], namespace=SOCKET_NAMESPACE)
+
 @socketio.on('connect', namespace=SOCKET_NAMESPACE)
 def handleConnect():
 	# send the current state only to the client that just connected
@@ -533,6 +663,10 @@ def handleConnect():
 	emit("str2str", proc is not None)
 	emit("timesync", "pending" if time_sync_in_progress else time_is_synchronized)
 	emit("profiles", profilesPayload())
+	emit("solution", solutionPayload(currentSolution()))
+	with sol_lock:
+		track = list(sol_track)
+	emit("track", track)
 
 @socketio.on('profile', namespace=SOCKET_NAMESPACE)
 def handleProfile(name):

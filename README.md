@@ -35,8 +35,9 @@ A small, self-contained GNSS logger and RTK rover built on a **Raspberry Pi Zero
   - free storage.
 - **File list, download and delete.** Lists the log files with size and date, newest first, and refreshes it automatically. Delete one file or all of them; files still being written are protected.
 - **Status LEDs** on GPIO, so you can see the state without opening the panel.
-- **OLED status display** (optional SSD1306 on I2C) showing the IP address, rover, recording and time sync state, CPU temperature and free storage.
-- **Mobile-friendly panel** with a light and dark theme. All assets are served locally, so it works without internet.
+- **OLED status display** (optional SSD1306 on I2C) showing the IP address, the rover's solution, recording and time sync state, the time, CPU temperature and free storage.
+- **Rover position and map.** Shows the solution quality (FIX, FLOAT, SINGLE…), satellites, accuracy, age and ratio, and the rover's position and track on a map, coloured by quality.
+- **Mobile-friendly panel** with a light and dark theme. All assets are served locally, so it works without internet. Only the map's background tiles need internet on the phone or laptop.
 
 ## Hardware
 
@@ -71,16 +72,20 @@ A small, self-contained GNSS logger and RTK rover built on a **Raspberry Pi Zero
 | VCC | 3.3 V (pin 1) |
 | GND | GND (pin 9) |
 
-The display shows, refreshed every 2 seconds:
+The display refreshes every second. While the rover runs and has a solution:
 
 ```
 IP 192.168.1.122
-Rover RUN  Prof f9p
-Rec ON    Time OK
-52C  Free 16.9GB
+FIX    14sv 0.012m
+Rec ON    11:42:07
+52C 16.9GB 28.11.26
 ```
 
-`Rover` is `RUN`, `off`, or `ERR` when the rover failed to start. `Time` is `OK`, `...` while syncing, or `--` when not synced. When you shut the device down from the panel, the display says so.
+The second line is the solution quality, the number of satellites and the horizontal accuracy (1σ; `H1.2` is HDOP when the profile outputs NMEA). Otherwise it reads `Rover off  Prof m8t`, `Rover RUN  no sol`, or `Rover ERR` when the rover failed to start.
+
+The time and date appear once the clock is set by GPS or NTP. Until then the third line shows `Time --`, or `Time ...` while syncing, and the fourth `52C  Free 16.9GB`.
+
+When you shut the device down from the panel, the display says so.
 
 > The receiver's UART must be set to **115200 baud**. The NEO-6M ships at 9600 and the ZED-F9P at 38400. Change the rate with u-center and save it to the receiver's flash or battery-backed RAM.
 
@@ -304,6 +309,10 @@ inpstr2-nmealon=23.23744
 
 The rover publishes its solution as **NMEA on TCP port 27000** (`outstr2`). Connect any NMEA-over-TCP client to `<pi-address>:27000`, for example QGIS or a mapping app on your phone.
 
+The control panel and the display read the solution from the profile's own TCP server output. They use the first `outstr1`/`outstr2` with type `tcpsvr` and format `llh`, or `nmea` if there's no `llh` one. With `llh` you also get accuracy (standard deviations), age and ratio; with `nmea`, HDOP instead. A profile without such an output still works, but shows no position. The panel says so in **Messages**.
+
+In `kinematic` and other RTK modes, `rtkrcv` outputs a solution only while corrections arrive from the base. If the map keeps saying "No solution yet", check the NTRIP stream (the `base_*.rtcm3` log should grow).
+
 You can also record the rover's input streams by setting `logstr1-type` and `logstr2-type` to `file`. The paths are already set to `/home/pi/log/rover_*.ubx` and `base_*.rtcm3`.
 
 ## Using the control panel
@@ -324,6 +333,8 @@ Typical field workflow:
 2. Open the panel and press **Sync time**.
 3. Press **Record raw** or **Start rover**.
 4. Stop it, download the files and press **Shut down** before you cut the power.
+
+The **Position** panel shows the current solution and a map of the rover's track: one point per second, kept for the last hour, green for FIX, orange for FLOAT, blue for DGPS and red for SINGLE. The map follows the rover until you pan it; the target button turns following back on, and the trash button clears the track. The background map comes from OpenStreetMap through the device you view the panel on; without internet the track is drawn on a grid with a scale bar.
 
 The **Messages** panel shows what the server is doing, with timestamps. The **Logs** panel lists every file in `/home/pi/log`, newest first. Each server start also creates a `<time>.log` file there, containing the web server's request log.
 
@@ -354,9 +365,10 @@ Process the RINEX files with `rnx2rtkp` or RTKPOST, using base station or CORS d
 │   │   ├── RtkController.py    Drives the rtkrcv console through pexpect
 │   │   ├── gps_time.py         Sets the system clock from UBX NAV-TIMEUTC
 │   │   ├── display.py          SSD1306 OLED status display over I2C
+│   │   ├── solution.py         Reads rtkrcv's llh / NMEA solution output
 │   │   ├── reach_tools.py      Helpers
 │   │   ├── index.html          Control panel page
-│   │   ├── static/             CSS, JS, bundled Socket.IO client
+│   │   ├── static/             CSS, JS, bundled Socket.IO client and Leaflet
 │   │   ├── requirements.txt    Python dependencies
 │   │   └── settings.json       Selected receiver profile (created at runtime)
 │   ├── 6m_navi.conf, 6m.cmd    NEO-6M rtkrcv profile and receiver commands
@@ -410,3 +422,5 @@ The control panel has **no authentication**. Anyone who can reach port 80 can st
 - **RTKLIB** by T. Takasu, rtklibexplorer fork. BSD 2-clause license.
 - `RtkController.py`, `gps_time.py` and `reach_tools.py` are based on **ReachView** by Emlid Ltd. and are licensed under the **GNU GPL v3**.
 - The bundled **Socket.IO** client is MIT-licensed.
+- The bundled **Leaflet** 1.9.4 is BSD 2-clause licensed (`pi/rtk/static/leaflet/LICENSE`).
+- Map data © **OpenStreetMap** contributors. The tiles come from the OpenStreetMap tile servers, whose [usage policy](https://operations.osmfoundation.org/policies/tiles/) allows light personal use like this.

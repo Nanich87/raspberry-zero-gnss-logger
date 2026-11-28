@@ -138,6 +138,8 @@
             else if (syncing) setTile("t-time", "Syncing…", "warn");
             else setTile("t-time", "Not synced", "warn");
         }
+
+        renderPosition();
     }
 
     // ---------- files ----------
@@ -253,6 +255,179 @@
         }
     }
 
+    // ---------- position ----------
+
+    var SOLUTION_STALE_MS = 6000;
+    var QUALITY_TONE = { FIX: "ok", FLOAT: "warn", DGPS: "accent", SBAS: "accent", PPP: "accent", SINGLE: "err" };
+
+    var pos = {
+        sol: null,          // last solution
+        at: 0,              // when it arrived (client clock)
+        follow: true,       // keep the map centred on the rover
+        lastPoint: 0,       // when the last track point was added
+        roverSince: 0,      // when the rover was seen starting
+        tilesFailed: false
+    };
+
+    function toneColor(tone) {
+        return getComputedStyle(document.documentElement).getPropertyValue("--" + tone).trim() || "#888";
+    }
+    function qualityTone(q) { return QUALITY_TONE[q] || "err"; }
+
+    function fmtNum(v, digits, unit) {
+        return v === null || v === undefined ? "—" : v.toFixed(digits) + (unit || "");
+    }
+
+    function accuracyText(s) {
+        if (s.hacc !== null && s.hacc !== undefined) return "±" + fmtNum(s.hacc, s.hacc < 0.1 ? 3 : 2, " m");
+        if (s.hdop !== null && s.hdop !== undefined) return "HDOP " + s.hdop.toFixed(1);
+        return "";
+    }
+
+    // map (Leaflet may be missing if the file failed to load: then no map, stats still work)
+    var map = null, trackLayer = null, here = null, accCircle = null;
+
+    function initMap() {
+        if (!window.L) { mapNote("Map library failed to load"); return; }
+
+        map = L.map("map", { preferCanvas: true, zoomControl: true, worldCopyJump: true })
+            .setView([20, 0], 2);
+        L.control.scale({ imperial: false }).addTo(map);
+
+        // tiles come from the internet through the phone, not the Pi
+        var tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxNativeZoom: 19,
+            maxZoom: 22,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+        tiles.on("tileerror", function () {
+            if (!pos.tilesFailed) { pos.tilesFailed = true; renderPosition(); }
+        });
+        tiles.on("tileload", function () {
+            if (pos.tilesFailed) { pos.tilesFailed = false; renderPosition(); }
+        });
+
+        trackLayer = L.layerGroup().addTo(map);
+
+        // panning by hand stops following until the button is pressed again
+        map.on("dragstart", function () { setFollow(false); });
+    }
+
+    function mapNote(text) {
+        var note = $("map-note");
+        note.hidden = !text;
+        note.textContent = text || "";
+    }
+
+    function addTrackPoint(lat, lon, quality) {
+        if (!trackLayer) return;
+        L.circleMarker([lat, lon], {
+            radius: 4,
+            weight: 1,
+            color: "rgba(0, 0, 0, .35)",
+            fillOpacity: 0.95,
+            fillColor: toneColor(qualityTone(quality)),
+            interactive: false
+        }).addTo(trackLayer);
+    }
+
+    function setTrack(points) {
+        if (!trackLayer) return;
+        trackLayer.clearLayers();
+        var qname = { 1: "FIX", 2: "FLOAT", 3: "SBAS", 4: "DGPS", 5: "SINGLE", 6: "PPP" };
+        points.forEach(function (p) { addTrackPoint(p[0], p[1], qname[p[2]] || "SINGLE"); });
+        if (here) here.bringToFront();
+        renderPosition();
+    }
+
+    function setFollow(on) {
+        pos.follow = on;
+        $("map-follow").setAttribute("aria-pressed", on ? "true" : "false");
+        if (on && map && pos.sol) map.setView([pos.sol.lat, pos.sol.lon], Math.max(map.getZoom(), 17));
+    }
+
+    function onSolution(s) {
+        if (!s) {
+            pos.sol = null;
+            renderPosition();
+            return;
+        }
+        var first = !pos.sol;
+        pos.sol = s;
+        pos.at = Date.now();
+
+        if (map) {
+            var ll = [s.lat, s.lon];
+            var color = toneColor(qualityTone(s.quality));
+            if (!here) {
+                accCircle = L.circle(ll, { radius: 0, weight: 1, fillOpacity: 0.12, interactive: false }).addTo(map);
+                here = L.circleMarker(ll, { radius: 7, weight: 2, color: "#fff", fillOpacity: 1, interactive: false }).addTo(map);
+            }
+            here.setLatLng(ll).setStyle({ fillColor: color });
+            accCircle.setLatLng(ll).setRadius(s.hacc || 0).setStyle({ color: color, fillColor: color });
+
+            // same rate as the server's track: one point per second
+            if (pos.at - pos.lastPoint >= 1000) {
+                addTrackPoint(s.lat, s.lon, s.quality);
+                pos.lastPoint = pos.at;
+                here.bringToFront();
+            }
+            if (first && pos.follow) map.setView(ll, 18);
+            else if (pos.follow) map.panTo(ll, { animate: false });
+        }
+        renderPosition();
+    }
+
+    function renderPosition() {
+        var s = pos.sol;
+        var fresh = s && Date.now() - pos.at < SOLUTION_STALE_MS;
+
+        // tile
+        if (!state.connected) setTile("t-sol", "—", "muted");
+        else if (fresh) setTile("t-sol", s.quality, qualityTone(s.quality));
+        else if (state.rover) setTile("t-sol", s ? "Lost" : "Waiting…", s ? "err" : "warn");
+        else setTile("t-sol", "Off", "muted");
+        $("t-sol").querySelector(".tile-sub").textContent =
+            fresh ? s.ns + " sats" + (accuracyText(s) ? " · " + accuracyText(s) : "") : "\u00a0";
+
+        // stats
+        $("p-lat").textContent = s ? s.lat.toFixed(8) + "°" : "—";
+        $("p-lon").textContent = s ? s.lon.toFixed(8) + "°" : "—";
+        $("p-h").textContent = s ? fmtNum(s.h, 3, " m") : "—";
+        if (s && s.hacc !== null && s.hacc !== undefined) {
+            // 1-sigma: horizontal from north and east, vertical from up
+            $("p-acc-label").textContent = "Accuracy H / V";
+            $("p-acc").textContent = "±" + fmtNum(s.hacc, 3) + " / ±" + fmtNum(s.sdu, 3) + " m";
+            $("p-acc").title = "1σ north " + fmtNum(s.sdn, 3) + " m, east " + fmtNum(s.sde, 3) + " m, up " + fmtNum(s.sdu, 3) + " m";
+        } else {
+            $("p-acc-label").textContent = "HDOP";
+            $("p-acc").textContent = s ? fmtNum(s.hdop, 1) : "—";
+        }
+        $("p-ns").textContent = s ? String(s.ns) : "—";
+        $("p-age").textContent = s ? fmtNum(s.age, 1, " s") + " · " + fmtNum(s.ratio, 1) : "—";
+        $("pos-stats").classList.toggle("is-stale", !!s && !fresh);
+        $("pos-summary").textContent = s ? "· " + s.quality + (fresh ? "" : " (last)") : "";
+
+        // note over the map
+        if (!state.connected) mapNote("");
+        else if (!state.rover && !s) mapNote("Start the rover to see its position");
+        else if (state.rover && !fresh) {
+            var waited = Date.now() - pos.roverSince > 30000;
+            mapNote(s ? "No solution for a few seconds"
+                : waited ? "No solution yet. RTK modes need corrections from the base: check that NTRIP data is arriving."
+                : "Waiting for the first solution…");
+        }
+        else if (pos.tilesFailed) mapNote("Map tiles need internet on this device. The track is drawn on a grid.");
+        else mapNote("");
+    }
+
+    setInterval(renderPosition, 1000);   // notices a solution going stale
+
+    $("map-follow").addEventListener("click", function () { setFollow(!pos.follow); });
+    $("map-clear").addEventListener("click", function () {
+        if (state.connected) socket.emit("clear_track");
+    });
+
     // ---------- deleting ----------
 
     var deleteDialog = $("confirm-delete");
@@ -333,6 +508,7 @@
 
     socket.on("state", function (running) {
         var changed = state.rover !== !!running;
+        if (running && (changed || !pos.roverSince)) pos.roverSince = Date.now();
         state.rover = !!running;
         if (state.busy !== "restart" || !changed || running) setBusy(null);
         else render();
@@ -375,6 +551,13 @@
     });
 
     socket.on("files", function () { loadFiles(); });
+
+    socket.on("solution", onSolution);
+
+    socket.on("track", function (points) {
+        pos.lastPoint = Date.now();   // the server's track is current up to now
+        setTrack(points || []);
+    });
 
     socket.on("message", function (message) {
         log(String(message));
@@ -438,5 +621,6 @@
 
     $("refresh-files").addEventListener("click", loadFiles);
 
+    initMap();
     render();
 })();

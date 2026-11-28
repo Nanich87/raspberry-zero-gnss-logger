@@ -7,6 +7,7 @@
 	<meta name="color-scheme" content="dark light">
 	<meta name="theme-color" content="#0f1216">
 	<title>{{ hostname }} · GNSS Logger</title>
+	<link rel="stylesheet" href="{{ url_for('static', filename='leaflet/leaflet.css') }}">
 	<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
@@ -24,6 +25,7 @@
 			<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1L20.5 8.5"/><path d="M20.5 3.5v5h-5"/></symbol>
 			<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
 			<symbol id="i-clear" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4.5h6V7"/><path d="M6.5 7l1 13h9l1-13"/></symbol>
+			<symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
 			<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4.5h6V7"/><path d="M6.5 7l1 13h9l1-13"/><path d="M10 11v5.5M14 11v5.5"/></symbol>
 		</defs>
 	</svg>
@@ -41,6 +43,11 @@
 
 	<main class="wrap">
 		<section class="tiles" aria-label="Status">
+			<div class="tile" id="t-sol" data-tone="muted">
+				<div class="tile-label">Solution</div>
+				<div class="tile-value">—</div>
+				<div class="tile-sub muted">&nbsp;</div>
+			</div>
 			<div class="tile" id="t-rover" data-tone="muted">
 				<div class="tile-label">Rover</div>
 				<div class="tile-value">—</div>
@@ -107,6 +114,35 @@
 			</button>
 		</section>
 
+		<section class="panel map-panel" aria-label="Rover position">
+			<div class="panel-head">
+				<h2>Position <span id="pos-summary" class="muted"></span></h2>
+				<div class="head-actions">
+					<button class="icon-btn" id="map-follow" title="Follow the rover" aria-label="Follow the rover" aria-pressed="true">
+						<svg class="icon"><use href="#i-target"/></svg>
+					</button>
+					<button class="icon-btn icon-btn-danger" id="map-clear" title="Clear track" aria-label="Clear track">
+						<svg class="icon"><use href="#i-clear"/></svg>
+					</button>
+				</div>
+			</div>
+			<dl class="pos-stats" id="pos-stats">
+				<div><dt>Latitude</dt><dd id="p-lat">—</dd></div>
+				<div><dt>Longitude</dt><dd id="p-lon">—</dd></div>
+				<div><dt>Height</dt><dd id="p-h">—</dd></div>
+				<div><dt id="p-acc-label">Accuracy H / V</dt><dd id="p-acc">—</dd></div>
+				<div><dt>Satellites</dt><dd id="p-ns">—</dd></div>
+				<div><dt>Age · Ratio</dt><dd id="p-age">—</dd></div>
+			</dl>
+			<div class="map-wrap">
+				<div id="map" class="map"></div>
+				<div id="map-note" class="map-note" hidden></div>
+				<div class="map-legend" aria-hidden="true">
+					<span data-tone="ok">FIX</span><span data-tone="warn">FLOAT</span><span data-tone="accent">DGPS</span><span data-tone="err">SINGLE</span>
+				</div>
+			</div>
+		</section>
+
 		<section class="panels">
 			<div class="panel">
 				<div class="panel-head">
@@ -161,6 +197,7 @@
 	</dialog>
 
 	<script src="{{ url_for('static', filename='socket.io.js') }}"></script>
+	<script src="{{ url_for('static', filename='leaflet/leaflet.js') }}"></script>
 	<script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 
