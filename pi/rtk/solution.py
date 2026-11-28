@@ -2,13 +2,14 @@
 
 rtkrcv writes solutions to outstr1/outstr2. When one of them is a TCP server
 (tcpsvr) in llh or nmea format, find_output() finds it in the profile and
-parse_llh() / parse_gga() turn its lines into dicts:
+SolutionParser turns its lines into dicts:
 
 	{"lat", "lon", "h", "q", "quality", "ns", "sdn", "sde", "sdu",
 	 "hacc", "hdop", "age", "ratio", "time"}
 
-Fields a format doesn't carry are None (NMEA has no standard deviations,
-llh has no HDOP).
+Fields a format doesn't carry are None: llh has no HDOP, NMEA has no ratio.
+In NMEA the standard deviations come from the GST sentence that RTKLIB
+writes right after each GGA; SolutionParser joins the two.
 """
 
 import math
@@ -132,12 +133,36 @@ def _nmea_deg(value, hemi, width):
 	return -deg if hemi in ("S", "W") else deg
 
 
+def _nmea_time(hhmmss):
+	return "%s:%s:%s" % (hhmmss[0:2], hhmmss[2:4], hhmmss[4:]) if len(hhmmss) >= 6 else hhmmss
+
+
+def _nmea_fields(line, kind):
+	"""Fields of a $xx<kind> sentence with a valid checksum, else None."""
+	line = line.strip()
+	if not line.startswith("$") or line[3:6] != kind or not _nmea_checksum_ok(line):
+		return None
+	return line.split("*")[0].split(",")
+
+
+def parse_gst(line):
+	"""A $xxGST sentence: {"time", "sdn", "sde", "sdu"}, or None.
+
+	time, rms, semi-major, semi-minor, orientation, sd lat, sd lon, sd alt"""
+	f = _nmea_fields(line, "GST")
+	if f is None or len(f) < 9:
+		return None
+	sdn, sde, sdu = _float(f[6]), _float(f[7]), _float(f[8])
+	if sdn is None or sde is None:
+		return None
+	return {"time": _nmea_time(f[1]), "sdn": sdn, "sde": sde, "sdu": sdu}
+
+
 def parse_gga(line):
 	"""A $xxGGA sentence, or None for other sentences and junk."""
-	line = line.strip()
-	if not line.startswith("$") or line[3:6] != "GGA" or not _nmea_checksum_ok(line):
+	f = _nmea_fields(line, "GGA")
+	if f is None:
 		return None
-	f = line.split("*")[0].split(",")
 	try:
 		gga_q = int(f[6] or 0)
 		if gga_q == 0:
@@ -150,12 +175,41 @@ def parse_gga(line):
 		ns = int(f[7] or 0)
 	except (IndexError, ValueError):
 		return None
-	time = "%s:%s:%s" % (f[1][0:2], f[1][2:4], f[1][4:]) if len(f[1]) >= 6 else f[1]
+	time = _nmea_time(f[1])
 	return _solution(lat, lon, h, GGA_QUALITY.get(gga_q, 5), ns, time,
 		age=_float(f[13]) if len(f) > 13 else None, hdop=_float(f[8]))
 
 
+class SolutionParser:
+	"""Feed it lines of one stream; feed() returns the solutions completed."""
+
+	def __init__(self, fmt, options=None):
+		self.fmt = fmt
+		self.options = options or {}
+		self.pending = None   # NMEA: GGA waiting for its GST
+
+	def feed(self, line):
+		if self.fmt == "llh":
+			sol = parse_llh(line, self.options.get("degform", "deg"), self.options.get("fieldsep", ""))
+			return [sol] if sol else []
+
+		gga = parse_gga(line)
+		if gga is not None:
+			# a GGA without a GST before the next one goes out as it is
+			done, self.pending = ([self.pending] if self.pending else []), gga
+			return done
+
+		gst = parse_gst(line)
+		if gst is not None and self.pending and self.pending["time"] == gst["time"]:
+			sol, self.pending = self.pending, None
+			sol.update(sdn=gst["sdn"], sde=gst["sde"], sdu=gst["sdu"],
+				hacc=math.hypot(gst["sdn"], gst["sde"]))
+			return [sol]
+		return []
+
+
 def parse(line, fmt, options):
+	"""One line on its own (no GGA + GST joining)."""
 	if fmt == "llh":
 		return parse_llh(line, options.get("degform", "deg"), options.get("fieldsep", ""))
 	return parse_gga(line)

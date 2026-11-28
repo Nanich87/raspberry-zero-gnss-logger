@@ -81,7 +81,7 @@ Rec ON    11:42:07
 52C 16.9GB 28.11.26
 ```
 
-The second line is the solution quality, the number of satellites and the horizontal accuracy (1σ; `H1.2` is HDOP when the profile outputs NMEA). Otherwise it reads `Rover off  Prof m8t`, `Rover RUN  no sol`, or `Rover ERR` when the rover failed to start.
+The second line is the solution quality, the number of satellites and the horizontal accuracy (1σ; `H1.2` is HDOP, shown only if an NMEA output carries no GST sentence). Otherwise it reads `Rover off  Prof m8t`, `Rover RUN  no sol`, or `Rover ERR` when the rover failed to start.
 
 The time and date appear once the clock is set by GPS or NTP. Until then the third line shows `Time --`, or `Time ...` while syncing, and the fourth `52C  Free 16.9GB`.
 
@@ -324,7 +324,7 @@ The first connection may time out because the rover has no position yet; `rtkrcv
 
 The rover publishes its solution as **NMEA on TCP port 27000** (`outstr2`). Connect any NMEA-over-TCP client to `<pi-address>:27000`, for example QGIS or a mapping app on your phone.
 
-The control panel and the display read the solution from the profile's own TCP server output. They use the first `outstr1`/`outstr2` with type `tcpsvr` and format `llh`, or `nmea` if there's no `llh` one. With `llh` you also get accuracy (standard deviations), age and ratio; with `nmea`, HDOP instead. A profile without such an output still works, but shows no position. The panel says so in **Messages**.
+The control panel and the display read the solution from the profile's own TCP server output. They use the first `outstr1`/`outstr2` with type `tcpsvr` and format `llh`, or `nmea` if there's no `llh` one. Both give the accuracy (standard deviations) and the age of corrections: `llh` has them in each line, and with `nmea` they come from the `$GPGST` sentence RTKLIB writes after each `$GPGGA`. `llh` also gives the AR ratio, `nmea` the HDOP. A profile without such an output still works, but shows no position. The panel says so in **Messages**.
 
 In `kinematic` and other RTK modes, `rtkrcv` outputs a solution only while corrections arrive from the base. If the map keeps saying "No solution yet", check the NTRIP stream (the `base_*.rtcm3` log should grow).
 

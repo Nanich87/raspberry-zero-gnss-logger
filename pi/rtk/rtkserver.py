@@ -363,6 +363,7 @@ def readSolutions(session, port, fmt, options):
 
 		conn.settimeout(1)      # only so the session check below runs regularly
 		buf = b""
+		parser = solution.SolutionParser(fmt, options)
 		try:
 			while sol_session == session:
 				try:
@@ -376,11 +377,8 @@ def readSolutions(session, port, fmt, options):
 				if len(buf) > 65536:
 					buf = b""   # not line-based data; don't grow forever
 
-				for raw in lines:
-					sol = solution.parse(raw.decode("ascii", errors="replace"), fmt, options)
-					if sol is None:
-						continue
-
+				for sol in [x for raw in lines
+						for x in parser.feed(raw.decode("ascii", errors="replace"))]:
 					now = time.time()
 					sol["rx"] = now
 					with sol_lock:
