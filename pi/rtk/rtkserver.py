@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from gpiozero import LED, CPUTemperature, LoadAverage
+from gpiozero import LED, CPUTemperature
 from RtkController import RtkController
 from subprocess import check_output, Popen, PIPE
 from threading import Lock, Semaphore, Thread
@@ -55,7 +55,7 @@ DISPLAY_ENABLED = True
 DISPLAY_I2C_BUS = 1
 DISPLAY_I2C_ADDRESS = 0x3C
 DISPLAY_HEIGHT = 32        # 32 or 64
-DISPLAY_REFRESH = 2        # seconds between updates
+DISPLAY_REFRESH = 1        # seconds between updates (the clock shows seconds)
 DISPLAY_RETRY = 30         # seconds between attempts to find a missing display
 
 # SocketIO
@@ -95,7 +95,12 @@ current_profile = os.path.basename(CONFIG_NAME)
 
 # CPU
 cpu = CPUTemperature()
-la = LoadAverage(min_load_average=0, max_load_average=2)
+
+def loadAverage():
+	"""5-minute load average. Read directly: gpiozero's LoadAverage in
+	Debian's 1.6.2 prints a debug line to the log on every read."""
+	with open("/proc/loadavg") as f:
+		return float(f.read().split()[1])
 
 # Display
 display = StatusDisplay(DISPLAY_I2C_BUS, DISPLAY_I2C_ADDRESS, height=DISPLAY_HEIGHT)
@@ -334,12 +339,30 @@ def sync():
 	# don't block the Socket.IO handler; setCorrectTime reports the result
 	socketio.start_background_task(setCorrectTime)
 
+# the display refreshes every second; these change rarely, so cache them
+_cached = {"ip": None, "ip_at": 0, "ntp": False, "ntp_at": 0}
+
 def getIp():
-	try:
-		ips = check_output(["hostname", "-I"], timeout=5).decode().split()
-	except (OSError, subprocess.SubprocessError):
-		ips = []
-	return ips[0] if ips else "no network"
+	if time.time() - _cached["ip_at"] >= 10:
+		try:
+			ips = check_output(["hostname", "-I"], timeout=5).decode().split()
+		except (OSError, subprocess.SubprocessError):
+			ips = []
+		_cached["ip"] = ips[0] if ips else "no network"
+		_cached["ip_at"] = time.time()
+	return _cached["ip"]
+
+def clockIsValid():
+	"""True once the clock was set from GPS, or by NTP (no Sync press needed)."""
+	if time_is_synchronized or _cached["ntp"]:
+		return True
+	if time.time() - _cached["ntp_at"] >= 30:
+		_cached["ntp_at"] = time.time()
+		try:
+			_cached["ntp"] = gps_time.time_synchronised_by_ntp()
+		except (OSError, subprocess.SubprocessError):
+			pass
+	return _cached["ntp"]
 
 def displayLines():
 	if server_not_interrupted:
@@ -349,21 +372,27 @@ def displayLines():
 	else:
 		rover = "off"
 
-	if time_sync_in_progress:
-		synced = "..."
-	elif time_is_synchronized:
-		synced = "OK"
-	else:
-		synced = "--"
-
 	profile = current_profile.replace("_navi.conf", "")
+	recording = "ON" if proc is not None else "off"
 	free_gb = shutil.disk_usage(LOG_PATH).free / 1e9
+	temp = "%.0fC" % cpu.temperature
+
+	# the clock is only worth showing once it is right: until then, show the
+	# sync state instead. Local time, like the log file names.
+	if clockIsValid():
+		now = time.localtime()
+		line3 = "Rec %-4s  %s" % (recording, time.strftime("%H:%M:%S", now))
+		line4 = "%s %.1fGB %s" % (temp, free_gb, time.strftime("%d.%m.%y", now))
+	else:
+		synced = "..." if time_sync_in_progress else "--"
+		line3 = "Rec %-4s  Time %s" % (recording, synced)
+		line4 = "%s  Free %.1fGB" % (temp, free_gb)
 
 	return [
 		"IP " + getIp(),
 		"Rover %-4s Prof %s" % (rover, profile),
-		"Rec %-4s  Time %s" % ("ON" if proc is not None else "off", synced),
-		"%.0fC  Free %.1fGB" % (cpu.temperature, free_gb),
+		line3,
+		line4,
 	]
 
 def displayLoop():
@@ -390,7 +419,8 @@ def displayLoop():
 			elif display.available:
 				sendMessage("Status display connected")
 
-		socketio.sleep(DISPLAY_REFRESH)
+		# wake on the next whole second, so the clock doesn't skip or stutter
+		socketio.sleep(DISPLAY_REFRESH - time.time() % 1)
 
 def stopDisplay(lines = None):
 	global display_stopped
@@ -492,7 +522,7 @@ def handleCpu():
 
 @socketio.on('load', namespace=SOCKET_NAMESPACE)
 def handleLoad():
-	socketio.emit("load", la.load_average*100, namespace=SOCKET_NAMESPACE)
+	socketio.emit("load", loadAverage()*100, namespace=SOCKET_NAMESPACE)
 
 def handleWifi():
 	global wifi_is_enabled

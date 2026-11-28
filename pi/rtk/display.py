@@ -104,19 +104,17 @@ class StatusDisplay:
 		self.bus = None
 
 	def _flush(self):
-		pixels = self.image.load()
-		buf = []
+		# The display memory is 8-pixel-high pages; in each byte bit 0 is the
+		# top pixel. Transposing a page and mirroring it packs every column
+		# into one byte with Pillow, much faster than a loop over the pixels.
+		buf = bytearray()
 		for page in range(self.pages):
-			for x in range(self.width):
-				byte = 0
-				for bit in range(8):
-					if pixels[x, page * 8 + bit]:
-						byte |= 1 << bit
-				buf.append(byte)
+			strip = self.image.crop((0, page * 8, self.width, page * 8 + 8))
+			buf += strip.transpose(Image.TRANSPOSE).transpose(Image.FLIP_LEFT_RIGHT).tobytes()
 
 		self._command(0x21, 0, self.width - 1, 0x22, 0, self.pages - 1)
 		for i in range(0, len(buf), _CHUNK):
-			self.bus.write_i2c_block_data(self.address, _DATA, buf[i:i + _CHUNK])
+			self.bus.write_i2c_block_data(self.address, _DATA, list(buf[i:i + _CHUNK]))
 
 	def _show(self, lines):
 		"""Draw up to height/8 lines of text. Returns False if the display failed."""
