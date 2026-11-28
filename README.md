@@ -279,19 +279,23 @@ Other settings at the top of `pi/rtk/rtkserver.py`:
 
 ### Receiver profiles
 
-| | `6m_navi.conf` (NEO-6M) | `f9p_navi.conf` (ZED-F9P) |
-|---|---|---|
-| Frequencies | L1 | L1 + L2 |
-| Constellations | GPS + SBAS | GPS + GLONASS + Galileo |
-| Ambiguity resolution | fix-and-hold | fix-and-hold, GLONASS AR on |
-| Startup commands | `6m.cmd` | `f9p.cmd` |
+| | `6m_navi.conf` (NEO-6M) | `m8t_navi.conf` (NEO-M8T) | `f9p_navi.conf` (ZED-F9P) |
+|---|---|---|---|
+| Frequencies | L1 | L1 | L1 + L2 |
+| Constellations | GPS + SBAS | GPS + GLONASS + Galileo | GPS + GLONASS + Galileo |
+| Ambiguity resolution | fix-and-hold | fix-and-hold, GLONASS AR fix-and-hold | fix-and-hold, GLONASS AR on |
+| Solution output | NMEA :27000 | NMEA :27000, llh :27100 | NMEA :27000 |
+| Startup commands | `6m.cmd` | `m8t.cmd` | `f9p.cmd` |
 
-Both profiles use kinematic mode with a 15° elevation mask.
+All profiles use kinematic mode with a 15° elevation mask.
 
 The startup command file is sent to the receiver when `rtkrcv` starts:
 
 - **`6m.cmd`** turns on raw measurement output on the NEO-6M (`RXM-RAW`, `RXM-SFRB`). It uses an undocumented command that works on firmware 7.03.
+- **`m8t.cmd`** sets 1 Hz and turns on everything `rtkrcv` needs on UART1: raw measurements (`RXM-RAWX`), navigation subframes (`RXM-SFRBX`) and time marks (`TIM-TM2`). It turns NMEA off on UART1 only, so u-center still works over USB. So the rover works even after the receiver loses its saved settings.
 - **`f9p.cmd`** turns on `TIM-TM2` time-mark messages, for event logging through the EXTINT pin.
+
+For a stable fix, the antenna needs open sky: satellites above 30° should show 40 dB or more. With the M8T on a roof antenna and VRS corrections, the rover holds a fix every epoch, with about 1 cm scatter. Indoors or by a window, high satellites drop to 25–33 dB and it stays FLOAT whatever the settings.
 
 ### NTRIP corrections
 
@@ -300,10 +304,21 @@ Set your caster in the `.conf` file:
 ```
 inpstr2-type   =ntripcli
 inpstr2-path   =username:password@host:port/mountpoint
-inpstr2-nmeareq=single      # send position to the caster (needed for VRS / nearest-base)
-inpstr2-nmealat=42.65035    # approximate position, used before the first fix
-inpstr2-nmealon=23.23744
+inpstr2-nmeareq=single      # send the rover's position to the caster (needed for VRS / nearest-base)
 ```
+
+For a VRS or nearest-base mountpoint, also check these two settings. All three profiles have them:
+
+```
+out-outsingle  =on          # keep single solutions; without it, the caster gets an empty position
+ant2-postype   =rtcm        # take the base position from the RTCM stream
+```
+
+With `out-outsingle=off`, RTKLIB marks a single solution as "no solution" in RTK modes. It then sends the caster an empty `$GPGGA,,,,` sentence, the caster sends no corrections, and without corrections there is never a solution: the rover stays without a position. The caster's reply is logged to `base_*.rtcm3` when `logstr2` is on; if that file stays at a few dozen bytes, this is the likely cause.
+
+The first connection may time out because the rover has no position yet; `rtkrcv` reconnects after `misc-reconnect` (10 s) and the corrections then arrive.
+
+`inpstr2-nmealat` / `inpstr2-nmealon` are only used with `inpstr2-nmeareq=latlon`, which always sends that fixed position.
 
 ### Solution output
 
@@ -372,6 +387,7 @@ Process the RINEX files with `rnx2rtkp` or RTKPOST, using base station or CORS d
 │   │   ├── requirements.txt    Python dependencies
 │   │   └── settings.json       Selected receiver profile (created at runtime)
 │   ├── 6m_navi.conf, 6m.cmd    NEO-6M rtkrcv profile and receiver commands
+│   ├── m8t_navi.conf, m8t.cmd  NEO-M8T rtkrcv profile and receiver commands
 │   ├── f9p_navi.conf, f9p.cmd  ZED-F9P rtkrcv profile and receiver commands
 │   └── RTKLIB/                 RTKLIB submodule (v2.5.1)
 ├── rtkrcv.c                    rtkrcv with the extended "mark" command
